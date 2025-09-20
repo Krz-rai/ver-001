@@ -54,7 +54,7 @@ const ScheduleRequestSchema = z.object({
       end: z.string().default('17:00'),   // HH:MM format
     }).optional(),
     workingDays: z.array(z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])).optional().default(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']),
-    timeZone: z.string().optional().default('UTC'),
+    timeZone: z.string().optional().default('America/New_York'),
     breakDuration: z.number().optional().default(15), // minutes between tasks
     maxTasksPerDay: z.number().optional().default(8),
   }).optional(),
@@ -113,7 +113,7 @@ http.route({
       const defaultPreferences = {
         workingHours: { start: '09:00', end: '17:00' },
         workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-        timeZone: 'UTC',
+        timeZone: 'America/New_York',
         breakDuration: 15,
         maxTasksPerDay: 8,
         ...preferences,

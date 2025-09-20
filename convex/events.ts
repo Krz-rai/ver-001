@@ -20,6 +20,7 @@ export const getUserEvents = query({
     userId: v.string(),
     isAllDay: v.optional(v.boolean()),
     location: v.optional(v.string()),
+    taskId: v.optional(v.id("tasks")), // Link to associated task
   })),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -135,6 +136,19 @@ export const updateEvent = mutation({
       throw new Error("Event not found or access denied");
     }
 
+    console.log("⚡ updateEvent mutation called", {
+      eventId: args.eventId,
+      currentEvent: {
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        calendarId: event.calendarId,
+        taskId: event.taskId
+      },
+      args: args
+    });
+
     // If calendarId is being changed, verify the new calendar belongs to user
     if (args.calendarId) {
       const calendar = await ctx.db.get(args.calendarId);
@@ -153,7 +167,12 @@ export const updateEvent = mutation({
     if (args.isAllDay !== undefined) updates.isAllDay = args.isAllDay;
     if (args.location !== undefined) updates.location = args.location;
 
+    console.log("⚡ About to patch event with updates:", updates);
+
     await ctx.db.patch(args.eventId, updates);
+
+    console.log("⚡ Event patched successfully");
+
     return null;
   },
 });

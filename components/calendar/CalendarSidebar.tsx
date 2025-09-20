@@ -6,6 +6,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Plus, ChevronLeft, ChevronRight, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TaskList } from "./TaskList";
+import { Id } from "@/convex/_generated/dataModel";
 
 interface CalendarSidebarProps {
   calendars?: Array<{
@@ -21,6 +23,9 @@ interface CalendarSidebarProps {
   onVisibleCalendarsChange?: (calendarIds: string[]) => void;
   onCalendarSelect?: (calendarId: string) => void; // backward compat
   onOpenAISchedule?: () => void;
+  onTaskClick?: (task: { _id: Id<"tasks">; scheduledEventId?: Id<"events">; title: string; }) => void;
+  selectedTaskId?: Id<"tasks"> | null;
+  onTaskEdit?: (task: any) => void;
 }
 
 export function CalendarSidebar({
@@ -32,6 +37,9 @@ export function CalendarSidebar({
   onVisibleCalendarsChange,
   onCalendarSelect,
   onOpenAISchedule,
+  onTaskClick,
+  selectedTaskId,
+  onTaskEdit,
 }: CalendarSidebarProps) {
   // Normalize calendars
   const displayCalendars = useMemo(
@@ -176,6 +184,15 @@ export function CalendarSidebar({
             </Button>
           </div>
         </div>
+
+        <Separator />
+
+        {/* Task List */}
+        <TaskList
+          onTaskClick={onTaskClick}
+          selectedTaskId={selectedTaskId}
+          onTaskEdit={onTaskEdit}
+        />
 
         <Separator />
 
