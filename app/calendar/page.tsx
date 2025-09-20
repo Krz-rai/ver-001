@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CalendarGrid } from "../../components/calendar/CalendarGrid";
 import { EventModal } from "../../components/calendar/EventModal";
 import { CalendarSidebar } from "../../components/calendar/CalendarSidebar";
+import { TaskEditModal } from "../../components/calendar/TaskEditModal";
 import AIScheduleModal from "../../components/ai-schedule-modal";
 import CornerAIChat from "../../components/corner-ai-chat";
 import { Authenticated, Unauthenticated } from "convex/react";
@@ -43,6 +44,10 @@ function CalendarContent() {
   const [isAIScheduleModalOpen, setIsAIScheduleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [visibleCalendarIds, setVisibleCalendarIds] = useState<string[] | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
+  const [highlightedEventId, setHighlightedEventId] = useState<Id<"events"> | null>(null);
+  const [isTaskEditModalOpen, setIsTaskEditModalOpen] = useState(false);
+  const [taskToEdit, setTaskToEdit] = useState<any>(null);
 
   // Initialize currentDate on client side to prevent hydration mismatch
   useEffect(() => {
@@ -94,6 +99,20 @@ function CalendarContent() {
     setSelectedEvent(event);
     setSelectedDate(null);
     setIsEventModalOpen(true);
+  };
+
+  const handleTaskClick = (task: { _id: Id<"tasks">; scheduledEventId?: Id<"events">; title: string; }) => {
+    setSelectedTaskId(task._id);
+    if (task.scheduledEventId) {
+      setHighlightedEventId(task.scheduledEventId);
+    } else {
+      setHighlightedEventId(null);
+    }
+  };
+
+  const handleTaskEdit = (task: any) => {
+    setTaskToEdit(task);
+    setIsTaskEditModalOpen(true);
   };
 
   // Removed unused handleEventMove function
@@ -184,6 +203,9 @@ function CalendarContent() {
           onGoToToday={handleToday}
           onVisibleCalendarsChange={setVisibleCalendarIds}
           onOpenAISchedule={() => setIsAIScheduleModalOpen(true)}
+          onTaskClick={handleTaskClick}
+          selectedTaskId={selectedTaskId}
+          onTaskEdit={handleTaskEdit}
         />
       </div>
       
@@ -275,6 +297,7 @@ function CalendarContent() {
             onCurrentDateChange={setCurrentDate}
             events={filteredEvents}
             calendars={stableCalendars}
+            highlightedEventId={highlightedEventId}
           />
         </div>
       </div>
@@ -300,7 +323,23 @@ function CalendarContent() {
       />
 
       {/* Corner AI Chat */}
-      <CornerAIChat />
+      <CornerAIChat 
+        defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
+      />
+
+      {/* Task Edit Modal */}
+      <TaskEditModal
+        isOpen={isTaskEditModalOpen}
+        onClose={() => {
+          setIsTaskEditModalOpen(false);
+          setTaskToEdit(null);
+        }}
+        task={taskToEdit}
+        onTaskUpdated={() => {
+          // Refresh tasks or any other needed updates
+          console.log("✅ Task updated, refreshing data...");
+        }}
+      />
     </div>
   );
 }
