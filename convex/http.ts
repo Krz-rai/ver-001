@@ -1085,4 +1085,673 @@ http.route({
   }),
 });
 
+// ============================================================================
+// CEREBRAS BACKEND IMPLEMENTATION
+// ============================================================================
+
+import {
+  convertToModelMessages,
+  streamText,
+  stepCountIs,
+  smoothStream,
+  wrapLanguageModel,
+  defaultSettingsMiddleware,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  generateId,
+} from "ai";
+import type { ModelMessage, TextStreamPart, Tool } from "ai";
+import type { LanguageModelV2Middleware, LanguageModelV2StreamPart } from '@ai-sdk/provider';
+
+// Cerebras model constants
+const CEREBRAS_MODELS = {
+  CHAT: 'qwen-3-coder-480b',
+  CODING: 'qwen-3-coder-480b', 
+  GENERAL: 'gpt-oss-120b',
+  REASONING: 'qwen-3-coder-480b',
+} as const;
+
+// Message types for Cerebras chat
+type CerebrasChatMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: Date;
+};
+
+type CerebrasChatMetadata = {
+  model?: string;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cachedPromptTokens?: number;
+};
+
+// Initialize Cerebras provider with caching (renamed to avoid conflict)
+let cerebrasChatProvider: ReturnType<typeof createCerebras> | null = null;
+
+function getCerebrasChatProvider() {
+  if (!cerebrasChatProvider) {
+    const apiKey = process.env.CEREBRAS_API_KEY;
+    if (!apiKey) {
+      throw new Error('CEREBRAS_API_KEY is not set in environment variables');
+    }
+    cerebrasChatProvider = createCerebras({ 
+      apiKey,
+      // Add any Cerebras-specific configuration here
+    });
+    console.log('🔐 [CEREBRAS] Initialized Cerebras provider');
+  }
+  return cerebrasChatProvider;
+}
+
+// Simple in-memory cache for Cerebras responses
+const cerebrasCache = new Map<string, { data: any; timestamp: number }>();
+const CEREBRAS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Cerebras-specific metrics
+const cerebrasMetrics = {
+  totalRequests: 0,
+  totalTokens: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  averageLatency: 0,
+  requestLatencies: [] as number[],
+  modelUsage: {} as Record<string, number>,
+};
+
+// Debug logging for Cerebras
+const isProduction = process.env.NODE_ENV === 'production';
+const cerebrasLog = (...args: unknown[]) => {
+  if (!isProduction) {
+    console.log('[CEREBRAS]', ...args);
+  }
+};
+
+// Cerebras middleware stack
+const cerebrasLoggingMiddleware: LanguageModelV2Middleware = {
+  wrapGenerate: async ({ doGenerate, params }) => {
+    const startTime = Date.now();
+    cerebrasMetrics.totalRequests++;
+
+    cerebrasLog('🔍 Cerebras Request:', {
+      temperature: params.temperature,
+      maxOutputTokens: params.maxOutputTokens,
+      timestamp: new Date().toISOString(),
+    });
+
+    const result = await doGenerate();
+    const latency = Date.now() - startTime;
+
+    cerebrasMetrics.requestLatencies.push(latency);
+    if (cerebrasMetrics.requestLatencies.length > 100) {
+      cerebrasMetrics.requestLatencies.shift();
+    }
+    cerebrasMetrics.averageLatency = cerebrasMetrics.requestLatencies.reduce((a, b) => a + b, 0) / cerebrasMetrics.requestLatencies.length;
+
+    // Track model usage (using a default since model isn't available in params)
+    const modelId = 'cerebras-model';
+    cerebrasMetrics.modelUsage[modelId] = (cerebrasMetrics.modelUsage[modelId] || 0) + 1;
+
+    if (result.usage) {
+      const promptTokens = (result.usage as any).promptTokens || 0;
+      const completionTokens = (result.usage as any).completionTokens || 0;
+      cerebrasMetrics.totalTokens += promptTokens + completionTokens;
+      cerebrasLog('📊 Token usage:', {
+        prompt: promptTokens,
+        completion: completionTokens,
+        total: promptTokens + completionTokens,
+        latency: `${latency}ms`,
+      });
+    }
+
+    return result;
+  },
+
+  wrapStream: async ({ doStream, params }) => {
+    const startTime = Date.now();
+    cerebrasMetrics.totalRequests++;
+
+    cerebrasLog('🔍 Cerebras Stream Request:', {
+      temperature: params.temperature,
+      timestamp: new Date().toISOString(),
+    });
+
+    const { stream, ...rest } = await doStream();
+    let totalTokens = 0;
+
+    const transformStream = new TransformStream<
+      LanguageModelV2StreamPart,
+      LanguageModelV2StreamPart
+    >({
+      transform(chunk, controller) {
+        if ('usage' in chunk && chunk.usage) {
+          const promptTokens = (chunk.usage as any).promptTokens || 0;
+          const completionTokens = (chunk.usage as any).completionTokens || 0;
+          totalTokens = promptTokens + completionTokens;
+          cerebrasMetrics.totalTokens += totalTokens;
+        }
+        controller.enqueue(chunk);
+      },
+
+      flush() {
+        const latency = Date.now() - startTime;
+        cerebrasMetrics.requestLatencies.push(latency);
+        if (cerebrasMetrics.requestLatencies.length > 100) {
+          cerebrasMetrics.requestLatencies.shift();
+        }
+        cerebrasMetrics.averageLatency = cerebrasMetrics.requestLatencies.reduce((a, b) => a + b, 0) / cerebrasMetrics.requestLatencies.length;
+
+        cerebrasLog('📊 Cerebras Stream completed:', {
+          totalTokens,
+          latency: `${latency}ms`,
+          avgLatency: `${Math.round(cerebrasMetrics.averageLatency)}ms`,
+        });
+      },
+    });
+
+    return {
+      stream: stream.pipeThrough(transformStream),
+      ...rest,
+    };
+  },
+};
+
+// Cerebras caching middleware
+const cerebrasCachingMiddleware: LanguageModelV2Middleware = {
+  wrapGenerate: async ({ doGenerate, params }) => {
+    cerebrasLog('🔄 Checking Cerebras cache...');
+    const cacheKey = JSON.stringify({
+      prompt: params.prompt,
+      temperature: params.temperature,
+      maxOutputTokens: params.maxOutputTokens,
+    });
+
+    // Check cache
+    const cached = cerebrasCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CEREBRAS_CACHE_TTL) {
+      cerebrasMetrics.cacheHits++;
+      cerebrasLog('✅ Cerebras cache hit');
+      return cached.data;
+    }
+
+    cerebrasLog('❌ Cerebras cache miss, generating...');
+    cerebrasMetrics.cacheMisses++;
+    const result = await doGenerate();
+    cerebrasLog('✅ Cerebras generation complete');
+
+    // Store in cache
+    cerebrasCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now(),
+    });
+
+    // Clean up old cache entries
+    for (const [key, value] of cerebrasCache.entries()) {
+      if (Date.now() - value.timestamp > CEREBRAS_CACHE_TTL) {
+        cerebrasCache.delete(key);
+      }
+    }
+
+    return result;
+  },
+};
+
+// Default settings for Cerebras
+const cerebrasDefaultSettings = defaultSettingsMiddleware({
+  settings: {
+    maxOutputTokens: 4000,
+    temperature: 0.7,
+  },
+});
+
+// Combine Cerebras middleware
+const cerebrasMiddleware = [
+  cerebrasDefaultSettings,
+  cerebrasLoggingMiddleware,
+  cerebrasCachingMiddleware,
+];
+
+// Helper function to create wrapped Cerebras model
+function createWrappedCerebrasModel(
+  cerebras: ReturnType<typeof createCerebras>,
+  modelName: string = CEREBRAS_MODELS.CHAT
+) {
+  cerebrasLog(`🚀 Creating wrapped Cerebras ${modelName} with middleware`);
+  return wrapLanguageModel({
+    model: cerebras(modelName),
+    middleware: cerebrasMiddleware,
+  });
+}
+
+// Build model messages for Cerebras
+const buildCerebrasModelMessages = (messages: CerebrasChatMessage[]): ModelMessage[] => {
+  // Convert CerebrasChatMessage directly to ModelMessage format
+  return messages.map(msg => ({
+    role: msg.role,
+    content: msg.content,
+  })) as ModelMessage[];
+};
+
+// Smooth streaming for Cerebras
+const cerebrasSmoothStreaming = smoothStream({
+  chunking: 'word',
+  delayInMs: 25,
+});
+
+// ============================================================================
+// CEREBRAS CHAT ENDPOINT
+// ============================================================================
+
+http.route({
+  path: "/api/cerebras-chat",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const { 
+      messages, 
+      model = CEREBRAS_MODELS.CHAT,
+      temperature = 0.7,
+      maxTokens = 4000,
+      stream = true 
+    }: { 
+      messages: CerebrasChatMessage[]; 
+      model?: string;
+      temperature?: number;
+      maxTokens?: number;
+      stream?: boolean;
+    } = await req.json();
+
+    cerebrasLog('📨 Cerebras chat request:', {
+      messageCount: messages.length,
+      model,
+      temperature,
+      maxTokens,
+      stream,
+    });
+
+    // Validate messages
+    if (!messages || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "Messages are required" }), {
+        status: 400,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+
+    // Get Cerebras provider and create model
+    const cerebras = getCerebrasChatProvider();
+    const wrappedModel = createWrappedCerebrasModel(cerebras, model);
+
+    // Build system prompt for Cerebras
+    const systemPrompt = `You are a helpful AI assistant powered by Cerebras. You provide clear, accurate, and helpful responses.
+
+Guidelines:
+- Be concise but comprehensive
+- Use clear, professional language
+- Provide specific examples when helpful
+- If you're unsure about something, say so
+- Format responses with proper markdown when appropriate
+- Always be helpful and respectful`;
+
+    // Convert messages for the model
+    const modelMessages = buildCerebrasModelMessages(messages);
+
+    try {
+      if (stream) {
+        // Streaming response
+        const result = streamText({
+          model: wrappedModel,
+          system: systemPrompt,
+          messages: modelMessages,
+          temperature,
+          maxOutputTokens: maxTokens,
+          experimental_transform: cerebrasSmoothStreaming as any,
+          onError(error) {
+            console.error("💥 Cerebras streamText error:", error);
+          },
+          onFinish(event) {
+            cerebrasLog('🤖 Cerebras Response completed:', {
+              textLength: event.text?.length || 0,
+              usage: event.usage,
+            });
+          },
+        });
+
+        return result.toUIMessageStreamResponse({
+          headers: new Headers({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Vary": "origin",
+          }),
+        });
+      } else {
+        // Non-streaming response
+        const result = await generateText({
+          model: wrappedModel,
+          system: systemPrompt,
+          messages: modelMessages,
+          temperature,
+          maxOutputTokens: maxTokens,
+        });
+
+        return new Response(JSON.stringify({
+          text: result.text,
+          usage: result.usage,
+          finishReason: result.finishReason,
+        }), {
+          headers: new Headers({
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+          }),
+        });
+      }
+    } catch (error) {
+      console.error('❌ Cerebras API error:', error);
+      return new Response(JSON.stringify({ 
+        error: "Failed to generate response",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }), {
+        status: 500,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+  }),
+});
+
+// ============================================================================
+// CEREBRAS CODING ASSISTANT ENDPOINT
+// ============================================================================
+
+http.route({
+  path: "/api/cerebras-code",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const { 
+      prompt, 
+      language = 'typescript',
+      context = '',
+      model = CEREBRAS_MODELS.CODING,
+      temperature = 0.3 
+    }: { 
+      prompt: string; 
+      language?: string;
+      context?: string;
+      model?: string;
+      temperature?: number;
+    } = await req.json();
+
+    cerebrasLog('💻 Cerebras code request:', {
+      prompt: prompt.substring(0, 100) + '...',
+      language,
+      model,
+      temperature,
+    });
+
+    if (!prompt) {
+      return new Response(JSON.stringify({ error: "Prompt is required" }), {
+        status: 400,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+
+    // Get Cerebras provider and create model
+    const cerebras = getCerebrasChatProvider();
+    const wrappedModel = createWrappedCerebrasModel(cerebras, model);
+
+    // Build system prompt for coding
+    const systemPrompt = `You are an expert ${language} developer. You write clean, efficient, and well-documented code.
+
+Guidelines:
+- Write production-ready code
+- Include proper error handling
+- Add helpful comments
+- Follow best practices for ${language}
+- Provide complete, runnable examples
+- Use modern syntax and patterns
+
+${context ? `Context: ${context}` : ''}`;
+
+    try {
+      const result = await generateText({
+        model: wrappedModel,
+        system: systemPrompt,
+        prompt,
+        temperature,
+        maxOutputTokens: 6000,
+      });
+
+      return new Response(JSON.stringify({
+        code: result.text,
+        language,
+        usage: result.usage,
+        finishReason: result.finishReason,
+      }), {
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        }),
+      });
+    } catch (error) {
+      console.error('❌ Cerebras code generation error:', error);
+      return new Response(JSON.stringify({ 
+        error: "Failed to generate code",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }), {
+        status: 500,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+  }),
+});
+
+// ============================================================================
+// CEREBRAS REASONING ENDPOINT
+// ============================================================================
+
+http.route({
+  path: "/api/cerebras-reasoning",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const { 
+      problem, 
+      context = '',
+      model = CEREBRAS_MODELS.REASONING,
+      temperature = 0.5 
+    }: { 
+      problem: string; 
+      context?: string;
+      model?: string;
+      temperature?: number;
+    } = await req.json();
+
+    cerebrasLog('🧠 Cerebras reasoning request:', {
+      problem: problem.substring(0, 100) + '...',
+      model,
+      temperature,
+    });
+
+    if (!problem) {
+      return new Response(JSON.stringify({ error: "Problem is required" }), {
+        status: 400,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+
+    // Get Cerebras provider and create model
+    const cerebras = getCerebrasChatProvider();
+    const wrappedModel = createWrappedCerebrasModel(cerebras, model);
+
+    // Build system prompt for reasoning
+    const systemPrompt = `You are an expert problem solver and analytical thinker. Break down complex problems into manageable steps and provide clear, logical reasoning.
+
+Guidelines:
+- Think step by step
+- Show your reasoning process
+- Consider multiple perspectives
+- Identify assumptions and limitations
+- Provide clear conclusions
+- Use structured thinking
+
+${context ? `Additional Context: ${context}` : ''}`;
+
+    try {
+      const result = await generateText({
+        model: wrappedModel,
+        system: systemPrompt,
+        prompt: problem,
+        temperature,
+        maxOutputTokens: 5000,
+      });
+
+      return new Response(JSON.stringify({
+        reasoning: result.text,
+        usage: result.usage,
+        finishReason: result.finishReason,
+      }), {
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        }),
+      });
+    } catch (error) {
+      console.error('❌ Cerebras reasoning error:', error);
+      return new Response(JSON.stringify({ 
+        error: "Failed to generate reasoning",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }), {
+        status: 500,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+  }),
+});
+
+// ============================================================================
+// CEREBRAS METRICS ENDPOINT
+// ============================================================================
+
+http.route({
+  path: "/api/cerebras-metrics",
+  method: "GET",
+  handler: httpAction(async () => {
+    const cacheSize = cerebrasCache.size;
+    const cacheHitRate = cerebrasMetrics.totalRequests > 0
+      ? ((cerebrasMetrics.cacheHits / cerebrasMetrics.totalRequests) * 100).toFixed(2)
+      : '0.00';
+
+    const metricsData = {
+      totalRequests: cerebrasMetrics.totalRequests,
+      totalTokens: cerebrasMetrics.totalTokens,
+      cacheHits: cerebrasMetrics.cacheHits,
+      cacheMisses: cerebrasMetrics.cacheMisses,
+      cacheHitRate: `${cacheHitRate}%`,
+      cacheSize,
+      averageLatency: Math.round(cerebrasMetrics.averageLatency),
+      recentLatencies: cerebrasMetrics.requestLatencies.slice(-10),
+      modelUsage: cerebrasMetrics.modelUsage,
+      availableModels: Object.keys(CEREBRAS_MODELS),
+    };
+
+    return new Response(JSON.stringify(metricsData, null, 2), {
+      headers: new Headers({
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      }),
+    });
+  }),
+});
+
+// ============================================================================
+// CEREBRAS OPTIONS HANDLERS
+// ============================================================================
+
+// OPTIONS handler for cerebras-chat
+http.route({
+  path: "/api/cerebras-chat",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      headers: new Headers({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      }),
+    });
+  }),
+});
+
+// OPTIONS handler for cerebras-code
+http.route({
+  path: "/api/cerebras-code",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      headers: new Headers({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      }),
+    });
+  }),
+});
+
+// OPTIONS handler for cerebras-reasoning
+http.route({
+  path: "/api/cerebras-reasoning",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      headers: new Headers({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      }),
+    });
+  }),
+});
+
+// OPTIONS handler for cerebras-metrics
+http.route({
+  path: "/api/cerebras-metrics",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      headers: new Headers({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      }),
+    });
+  }),
+});
+
 export default http;
