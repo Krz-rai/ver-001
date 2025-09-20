@@ -1,88 +1,102 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+interface CalendarEvent {
+  _id: string;
+  title: string;
+  startTime: number;
+  endTime: number;
+  calendarId: string;
+  isAllDay?: boolean;
+  location?: string;
+  description?: string;
+}
+
+interface Calendar {
+  _id: string;
+  name: string;
+  color: string;
+}
 
 interface CalendarGridProps {
   currentDate: Date;
   viewMode: "month" | "week" | "day";
   onDateClick: (date: Date) => void;
-  events?: Array<{
-    _id: string;
-    title: string;
-    startTime: number;
-    endTime: number;
-    calendarId: string;
-    isAllDay?: boolean;
-    location?: string;
-  }>;
-  calendars?: Array<{
-    _id: string;
-    name: string;
-    color: string;
-  }>;
+  onEventClick: (event: CalendarEvent) => void;
+  onViewModeChange?: (mode: "month" | "week" | "day") => void;
+  onCurrentDateChange?: (date: Date) => void;
+  events?: CalendarEvent[];
+  calendars?: Calendar[];
 }
 
+export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick, onViewModeChange, onCurrentDateChange, events = [], calendars = [] }: CalendarGridProps) {
+  const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
+  const [showAllEventsDate, setShowAllEventsDate] = useState<Date | null>(null);
+  const updateEvent = useMutation(api.events.updateEvent);
 
-
-export function CalendarGrid({ currentDate, viewMode, onDateClick, events = [], calendars = [] }: CalendarGridProps) {
-
-  // Create a map of calendar colors
-  const calendarColorMap = calendars.reduce((acc, cal) => {
-    acc[cal._id] = cal.color;
-    return acc;
-  }, {} as Record<string, string>);
-
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-
-    const days = [];
-    
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < startingDayOfWeek; i++) {
-      days.push(null);
-    }
-    
-    // Add days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      days.push(new Date(year, month, day));
-    }
-    
-    return days;
+  const getColorClass = (calendarId: string) => {
+    const calendar = calendars.find(cal => cal._id === calendarId);
+    const colorName = calendar?.color || 'blue';
+    const colorMap: Record<string, string> = {
+      'red': 'bg-red-500 border-red-600',
+      'blue': 'bg-blue-500 border-blue-600',
+      'green': 'bg-green-500 border-green-600',
+      'yellow': 'bg-yellow-500 border-yellow-600',
+      'purple': 'bg-purple-500 border-purple-600',
+      'pink': 'bg-pink-500 border-pink-600',
+      'indigo': 'bg-indigo-500 border-indigo-600',
+      'orange': 'bg-orange-500 border-orange-600',
+      'teal': 'bg-teal-500 border-teal-600',
+      'cyan': 'bg-cyan-500 border-cyan-600',
+    };
+    return colorMap[colorName] || 'bg-blue-500 border-blue-600';
   };
 
-  const getWeekDays = (date: Date) => {
-    const startOfWeek = new Date(date);
-    startOfWeek.setDate(date.getDate() - date.getDay());
-    
-    const weekDays = [];
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(startOfWeek);
-      day.setDate(startOfWeek.getDate() + i);
-      weekDays.push(day);
-    }
-    
-    return weekDays;
+  const formatTime = (date: Date) => {
+    return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
   };
 
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
-      // Convert Unix timestamp to Date
       const eventDate = new Date(event.startTime * 1000);
-      return eventDate.toDateString() === date.toDateString();
-    }).map(event => ({
-      id: event._id,
-      title: event.title,
-      startTime: new Date(event.startTime * 1000), // Convert from Unix timestamp
-      endTime: new Date(event.endTime * 1000),     // Convert from Unix timestamp
-      color: `bg-${calendarColorMap[event.calendarId] || 'blue-500'}`,
-      isAllDay: event.isAllDay,
-      location: event.location,
-    }));
+      const eventDateUTC = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
+      const targetDateUTC = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      return eventDateUTC.getTime() === targetDateUTC.getTime();
+    });
+  };
+
+  const handleEventDragStart = (e: React.DragEvent, event: CalendarEvent) => {
+    setDraggedEvent(event);
+  };
+
+  const handleEventDrop = async (e: React.DragEvent, newStartHour: number, date?: Date) => {
+    e.preventDefault();
+    if (!draggedEvent) return;
+
+    const targetDate = date || currentDate;
+    const newStart = new Date(targetDate);
+    newStart.setUTCHours(newStartHour, 0, 0, 0);
+
+    const duration = draggedEvent.endTime - draggedEvent.startTime;
+    const newStartTime = Math.floor(newStart.getTime() / 1000);
+    const newEndTime = newStartTime + duration;
+
+    try {
+      await updateEvent({
+        eventId: draggedEvent._id as any,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+    } catch (error) {
+      console.error('Failed to update event:', error);
+    }
+
+    setDraggedEvent(null);
   };
 
   const isToday = (date: Date) => {
@@ -94,196 +108,224 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, events = [], 
     return date.getMonth() === currentDate.getMonth();
   };
 
-  const renderMonthView = () => {
+  // Month View
+  if (viewMode === "month") {
+    const getDaysInMonth = (date: Date) => {
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const daysInMonth = lastDay.getDate();
+      const startingDayOfWeek = firstDay.getDay();
+
+      const days = [];
+      for (let i = 0; i < startingDayOfWeek; i++) {
+        days.push(null);
+      }
+      for (let day = 1; day <= daysInMonth; day++) {
+        days.push(new Date(year, month, day));
+      }
+      return days;
+    };
+
     const days = getDaysInMonth(currentDate);
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     return (
       <div className="h-full flex flex-col bg-white">
-        {/* Day headers */}
-        <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+        <div className="grid grid-cols-7 border-b border-gray-100">
           {dayNames.map((day) => (
-            <div key={day} className="p-2 lg:p-3 text-center text-xs lg:text-sm font-medium text-gray-500 border-r border-gray-200 last:border-r-0">
-              <span className="hidden sm:inline">{day}</span>
-              <span className="sm:hidden">{day.charAt(0)}</span>
-            </div>
+            <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">{day}</div>
           ))}
         </div>
-        
-        {/* Calendar grid */}
-        <div className="flex-1 grid grid-cols-7 grid-rows-6">
+        <div className="flex-1 grid grid-cols-7 auto-rows-fr">
           {days.map((day, index) => (
             <div
               key={index}
               className={cn(
-                "border-r border-b border-gray-200 p-1 lg:p-2 min-h-[80px] lg:min-h-[120px] cursor-pointer hover:bg-gray-50 transition-colors relative",
-                !day && "bg-gray-50",
-                day && isToday(day) && "bg-blue-50",
-                day && !isCurrentMonth(day) && "text-gray-400 bg-gray-50"
+                "border-r border-b border-gray-50 p-2 min-h-[100px] cursor-pointer hover:bg-gray-25 transition-colors",
+                !day && "bg-gray-25",
+                day && isToday(day) && "bg-blue-25",
+                day && !isCurrentMonth(day) && "text-gray-300"
               )}
-              onClick={() => day && onDateClick(day)}
+              onClick={() => {
+                if (day && onViewModeChange && onCurrentDateChange) {
+                  onCurrentDateChange(day);
+                  onViewModeChange("day");
+                }
+              }}
             >
               {day && (
                 <>
-                  {/* Date number */}
                   <div className={cn(
-                    "text-xs lg:text-sm font-medium mb-1 lg:mb-2 flex items-center justify-between",
+                    "text-sm font-medium mb-2 flex items-center justify-between",
                     isToday(day) && "text-blue-600",
-                    !isCurrentMonth(day) && "text-gray-400"
+                    !isCurrentMonth(day) && "text-gray-300"
                   )}>
                     <span>{day.getDate()}</span>
-                    {isToday(day) && (
-                      <div className="w-1.5 h-1.5 lg:w-2 lg:h-2 bg-blue-600 rounded-full"></div>
-                    )}
+                    {isToday(day) && <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>}
                   </div>
-                  
-                  {/* Events for this day */}
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     {getEventsForDate(day).slice(0, 3).map((event) => (
                       <div
-                        key={event.id}
+                        key={event._id}
                         className={cn(
-                          "text-xs px-1.5 py-0.5 rounded-sm cursor-pointer hover:opacity-90 transition-opacity truncate",
-                          event.color,
-                          "text-white font-medium"
+                          "text-xs px-2 py-1 rounded cursor-pointer hover:opacity-90 text-white font-medium",
+                          getColorClass(event.calendarId)
                         )}
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Handle event click
+                          onEventClick(event);
                         }}
                       >
-                        <div className="truncate">{event.title}</div>
-                        {!event.isAllDay && (
-                          <div className="text-xs opacity-75 truncate mt-0.5 hidden lg:block">
-                            {event.startTime.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                              hour12: true,
-                            })}
-                          </div>
-                        )}
+                        {event.title}
                       </div>
                     ))}
                     {getEventsForDate(day).length > 3 && (
-                      <div className="text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-700 px-1">
+                      <div
+                        className="text-xs text-blue-500 hover:text-blue-700 px-2 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowAllEventsDate(day);
+                        }}
+                      >
                         +{getEventsForDate(day).length - 3} more
                       </div>
                     )}
-                  </div>
-                  
-                  {/* Add event button (appears on hover) */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-                    <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                      +
-                    </div>
                   </div>
                 </>
               )}
             </div>
           ))}
         </div>
+
+        {/* All Events Modal */}
+        <Dialog open={!!showAllEventsDate} onOpenChange={() => setShowAllEventsDate(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {showAllEventsDate?.toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {showAllEventsDate && getEventsForDate(showAllEventsDate).map((event) => (
+                <div
+                  key={event._id}
+                  className={cn(
+                    "p-3 rounded cursor-pointer hover:opacity-90 text-white font-medium",
+                    getColorClass(event.calendarId)
+                  )}
+                  onClick={() => {
+                    onEventClick(event);
+                    setShowAllEventsDate(null);
+                  }}
+                >
+                  <div className="font-medium">{event.title}</div>
+                  {!event.isAllDay && (
+                    <div className="text-xs opacity-75 mt-1">
+                      {formatTime(new Date(event.startTime * 1000))} - {formatTime(new Date(event.endTime * 1000))}
+                    </div>
+                  )}
+                  {event.location && (
+                    <div className="text-xs opacity-75">📍 {event.location}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
-  };
+  }
 
-  const renderWeekView = () => {
+  // Week View
+  if (viewMode === "week") {
+    const getWeekDays = (date: Date) => {
+      const startOfWeek = new Date(date);
+      startOfWeek.setDate(date.getDate() - date.getDay());
+      const weekDays = [];
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(startOfWeek);
+        day.setDate(startOfWeek.getDate() + i);
+        weekDays.push(day);
+      }
+      return weekDays;
+    };
+
     const weekDays = getWeekDays(currentDate);
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const hours = Array.from({ length: 24 }, (_, i) => i);
-    const now = new Date();
-    const isCurrentWeek = weekDays.some((d) => d.toDateString() === now.toDateString());
-    const currentHour = now.getHours();
-    const currentMinutes = now.getMinutes();
 
     return (
       <div className="h-full flex flex-col bg-white">
-        {/* Day headers */}
-        <div className="grid grid-cols-8 border-b border-gray-200 bg-gray-50">
-          <div className="w-16 border-r border-gray-200"></div>
-          {dayNames.map((day, index) => (
-            <div key={day} className="p-3 text-center border-r border-gray-200">
-              <div className="text-sm font-medium text-gray-500">{day}</div>
-              <div className={cn(
-                "text-lg font-semibold mt-1",
-                isToday(weekDays[index]) && "text-blue-600 bg-blue-100 rounded-full w-8 h-8 flex items-center justify-center mx-auto"
-              )}>
-                {weekDays[index].getDate()}
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        {/* Week grid with time slots */}
-        <div className="flex-1 flex relative">
-          {/* Time column */}
-          <div className="w-16 border-r border-gray-200 bg-gray-50">
-            {hours.map((hour) => (
-              <div key={hour} className="h-12 border-b border-gray-100 flex items-start justify-end pr-2 pt-1">
-                <span className="text-xs text-gray-500">
-                  {hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`}
-                </span>
+        <div className="flex border-b border-gray-100">
+          <div className="w-12"></div>
+          <div className="flex-1 grid grid-cols-7">
+            {weekDays.map((day, index) => (
+              <div key={index} className="p-3 text-center border-l border-gray-50">
+                <div className="text-sm font-medium text-gray-600">{dayNames[index]}</div>
+                <div className={cn(
+                  "text-lg font-semibold",
+                  isToday(day) && "text-blue-600 bg-blue-100 rounded-full w-8 h-8 flex items-center justify-center mx-auto"
+                )}>
+                  {day.getDate()}
+                </div>
               </div>
             ))}
           </div>
-          
-          {/* Day columns */}
-          <div className="flex-1 grid grid-cols-7">
-            {weekDays.map((day) => (
-              <div key={day.toISOString()} className="border-r border-gray-200 relative">
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="flex">
+            <div className="w-12">
+              {hours.map((hour) => (
+                <div key={hour} className="h-12 flex items-center justify-end pr-1 text-xs text-gray-500 border-b border-gray-50">
+                  {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
+                </div>
+              ))}
+            </div>
+            <div className="flex-1 grid grid-cols-7">
+              {weekDays.map((day, dayIndex) => (
+              <div key={dayIndex} className="border-l border-gray-50">
                 {hours.map((hour) => (
                   <div
                     key={hour}
-                    className="h-12 border-b border-gray-100 relative cursor-pointer hover:bg-gray-50 group"
-                    onClick={() => {
-                      const date = new Date(day);
-                      date.setHours(hour, 0, 0, 0);
-                      onDateClick(date);
-                    }}
+                    className="h-12 border-b border-gray-50 relative cursor-pointer hover:bg-blue-25 transition-colors"
+                    onClick={() => onDateClick(day)}
+                    onDrop={(e) => handleEventDrop(e, hour, day)}
+                    onDragOver={(e) => e.preventDefault()}
                   >
-                    {/* Hour line indicator */}
-                    <div className="absolute top-0 left-0 right-0 h-px bg-gray-200 group-hover:bg-blue-200"></div>
-                    
-                    {/* Events for this hour */}
                     {getEventsForDate(day)
-                      .filter(event => {
-                        const eventStartHour = event.startTime.getHours();
-                        const eventEndHour = event.endTime.getHours();
-                        return eventStartHour <= hour && eventEndHour >= hour;
+                      .filter((event) => {
+                        const eventDate = new Date(event.startTime * 1000);
+                        return eventDate.getUTCHours() === hour;
                       })
                       .map((event) => {
-                        const eventStartHour = event.startTime.getHours();
-                        const eventEndHour = event.endTime.getHours();
-                        const eventDuration = eventEndHour - eventStartHour;
-                        const topOffset = eventStartHour === hour ? 0 : 0;
-                        const height = eventDuration > 0 ? `${eventDuration * 48}px` : '24px';
-                        
+                        const startTime = new Date(event.startTime * 1000);
+                        const endTime = new Date(event.endTime * 1000);
+                        const duration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+                        const height = Math.max(duration * 48, 24);
+
                         return (
                           <div
-                            key={event.id}
+                            key={event._id}
+                            draggable
+                            onDragStart={(e) => handleEventDragStart(e, event)}
                             className={cn(
-                              "absolute left-1 right-1 rounded-md text-xs px-2 py-1 text-white cursor-pointer hover:opacity-90 transition-opacity",
-                              event.color,
-                              eventStartHour === hour ? "top-1" : "top-0"
+                              "absolute left-1 right-1 rounded px-2 py-1 text-xs text-white font-medium cursor-pointer hover:opacity-90",
+                              getColorClass(event.calendarId)
                             )}
-                            style={{
-                              height: eventStartHour === hour ? height : 'auto',
-                              zIndex: 10
-                            }}
+                            style={{ height: `${height}px`, zIndex: 10 }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              // Handle event click
+                              onEventClick(event);
                             }}
                           >
-                            <div className="font-medium truncate">{event.title}</div>
-                            {!event.isAllDay && eventStartHour === hour && (
-                              <div className="text-xs opacity-75 truncate mt-0.5">
-                                {event.startTime.toLocaleTimeString("en-US", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })}
-                              </div>
-                            )}
+                            <div className="truncate">{event.title}</div>
+                            <div className="text-xs opacity-75">{formatTime(startTime)} - {formatTime(endTime)}</div>
                           </div>
                         );
                       })}
@@ -291,140 +333,73 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, events = [], 
                 ))}
               </div>
             ))}
-          </div>
-
-          {/* Current time line across week */}
-          {isCurrentWeek && (
-            <div
-              className="pointer-events-none absolute left-16 right-0"
-              style={{
-                top: `${currentHour * 48 + (currentMinutes / 60) * 48}px`,
-              }}
-            >
-              <div className="relative">
-                <div className="absolute -left-1 w-2 h-2 bg-red-500 rounded-full" />
-                <div className="h-0.5 bg-red-500" />
-              </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     );
-  };
+  }
 
-  const renderDayView = () => {
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    const now = new Date();
-    const isCurrentDay = isToday(currentDate);
-    const currentHour = now.getHours();
-    const currentMinutes = now.getMinutes();
-    
-    return (
-      <div className="h-full flex bg-white">
-        {/* Time column */}
-        <div className="w-20 border-r border-gray-200 bg-gray-50">
-          {hours.map((hour) => (
-            <div key={hour} className="h-12 border-b border-gray-100 flex items-start justify-end pr-3 pt-1">
-              <span className="text-xs text-gray-500 font-medium">
-                {hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`}
-              </span>
-            </div>
-          ))}
-        </div>
-        
-        {/* Day column */}
-        <div className="flex-1">
-          {/* Day header */}
-          <div className="h-16 border-b border-gray-200 bg-gray-50 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-lg font-semibold text-gray-900">
-                {currentDate.toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+  // Day View
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const now = new Date();
+  const isCurrentDay = isToday(currentDate);
+  const currentHour = now.getUTCHours();
+
+  return (
+    <div className="h-full flex flex-col bg-white">
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex">
+          <div className="w-20 border-r border-gray-100">
+            {hours.map((hour) => (
+              <div key={hour} className="h-16 flex items-center justify-end pr-4 text-sm text-gray-500 border-b border-gray-50">
+                {hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
               </div>
-              <div className="text-sm text-gray-500 mt-1">
-                {isToday(currentDate) ? "Today" : ""}
-              </div>
-            </div>
+            ))}
           </div>
-          
-          {/* Time slots */}
-          <div className="relative">
+          <div className="flex-1">
             {hours.map((hour) => (
               <div
                 key={hour}
-                className="h-12 border-b border-gray-100 relative cursor-pointer hover:bg-gray-50 group"
-                onClick={() => {
-                  const date = new Date(currentDate);
-                  date.setHours(hour, 0, 0, 0);
-                  onDateClick(date);
-                }}
+                className="h-16 border-b border-gray-50 relative cursor-pointer hover:bg-blue-25 transition-colors"
+                onClick={() => onDateClick(currentDate)}
+                onDrop={(e) => handleEventDrop(e, hour)}
+                onDragOver={(e) => e.preventDefault()}
               >
-                {/* Hour line indicator */}
-                <div className="absolute top-0 left-0 right-0 h-px bg-gray-200 group-hover:bg-blue-200"></div>
-                
-                {/* Current time indicator */}
                 {isCurrentDay && currentHour === hour && (
-                  <div
-                    className="absolute left-0 right-0 h-0.5 bg-red-500 z-20"
-                    style={{ top: `${(currentMinutes / 60) * 48}px` }}
-                  >
+                  <div className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 top-4">
                     <div className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full"></div>
                   </div>
                 )}
-                
-                {/* Events for this hour */}
                 {getEventsForDate(currentDate)
-                  .filter(event => {
-                    const eventStartHour = event.startTime.getHours();
-                    const eventEndHour = event.endTime.getHours();
-                    return eventStartHour <= hour && eventEndHour >= hour;
+                  .filter((event) => {
+                    const eventDate = new Date(event.startTime * 1000);
+                    return eventDate.getUTCHours() === hour;
                   })
                   .map((event) => {
-                    const eventStartHour = event.startTime.getHours();
-                    const eventEndHour = event.endTime.getHours();
-                    const eventDuration = eventEndHour - eventStartHour;
-                    const height = eventDuration > 0 ? `${eventDuration * 48}px` : '24px';
-                    
+                    const startTime = new Date(event.startTime * 1000);
+                    const endTime = new Date(event.endTime * 1000);
+                    const duration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+                    const height = Math.max(duration * 64, 32);
+
                     return (
                       <div
-                        key={event.id}
+                        key={event._id}
+                        draggable
+                        onDragStart={(e) => handleEventDragStart(e, event)}
                         className={cn(
-                          "absolute left-2 right-2 rounded-md text-xs px-3 py-2 text-white cursor-pointer hover:opacity-90 transition-opacity",
-                          event.color,
-                          eventStartHour === hour ? "top-1" : "top-0"
+                          "absolute left-2 right-2 rounded-lg px-3 py-2 text-sm text-white font-medium cursor-pointer hover:opacity-90 shadow-sm",
+                          getColorClass(event.calendarId)
                         )}
-                        style={{
-                          height: eventStartHour === hour ? height : 'auto',
-                          zIndex: 10
-                        }}
+                        style={{ height: `${height}px`, zIndex: 10 }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Handle event click
+                          onEventClick(event);
                         }}
                       >
                         <div className="font-medium truncate">{event.title}</div>
-                        {!event.isAllDay && eventStartHour === hour && (
-                          <div className="text-xs opacity-75 truncate mt-1">
-                            {event.startTime.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                              hour12: true,
-                            })} - {event.endTime.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                              hour12: true,
-                            })}
-                          </div>
-                        )}
-                        {event.location && eventStartHour === hour && (
-                          <div className="text-xs opacity-75 truncate mt-1">
-                            📍 {event.location}
-                          </div>
-                        )}
+                        <div className="text-xs opacity-90 mt-1">{formatTime(startTime)} - {formatTime(endTime)}</div>
+                        {event.location && <div className="text-xs opacity-75 truncate">📍 {event.location}</div>}
                       </div>
                     );
                   })}
@@ -433,14 +408,6 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, events = [], 
           </div>
         </div>
       </div>
-    );
-  };
-
-  return (
-    <div className="h-full bg-white">
-      {viewMode === "month" && renderMonthView()}
-      {viewMode === "week" && renderWeekView()}
-      {viewMode === "day" && renderDayView()}
     </div>
   );
 }

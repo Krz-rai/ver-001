@@ -26,13 +26,13 @@ interface EventModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedDate?: Date | null;
-  event?: {
-    id: string;
+  selectedEvent?: {
+    _id: string;
     title: string;
     description?: string;
-    startTime: Date;
-    endTime: Date;
-    isAllDay: boolean;
+    startTime: number;
+    endTime: number;
+    isAllDay?: boolean;
     location?: string;
     calendarId: string;
   } | null;
@@ -44,8 +44,9 @@ interface EventModalProps {
 }
 
 
-export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [] }: EventModalProps) {
+export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calendars = [] }: EventModalProps) {
   const createEvent = useMutation(api.events.createEvent);
+  const updateEvent = useMutation(api.events.updateEvent);
   const deleteEvent = useMutation(api.events.deleteEvent);
   
   const [formData, setFormData] = useState({
@@ -64,17 +65,19 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
   const [isEndDateOpen, setIsEndDateOpen] = useState(false);
 
   useEffect(() => {
-    if (event) {
+    if (selectedEvent) {
+      const startDate = new Date(selectedEvent.startTime * 1000);
+      const endDate = new Date(selectedEvent.endTime * 1000);
       setFormData({
-        title: event.title,
-        description: event.description || "",
-        startDate: event.startTime,
-        endDate: event.endTime,
-        startTime: event.startTime.toTimeString().slice(0, 5),
-        endTime: event.endTime.toTimeString().slice(0, 5),
-        isAllDay: event.isAllDay,
-        location: event.location || "",
-        calendarId: event.calendarId,
+        title: selectedEvent.title,
+        description: selectedEvent.description || "",
+        startDate: startDate,
+        endDate: endDate,
+        startTime: `${String(startDate.getUTCHours()).padStart(2, '0')}:${String(startDate.getUTCMinutes()).padStart(2, '0')}`,
+        endTime: `${String(endDate.getUTCHours()).padStart(2, '0')}:${String(endDate.getUTCMinutes()).padStart(2, '0')}`,
+        isAllDay: selectedEvent.isAllDay || false,
+        location: selectedEvent.location || "",
+        calendarId: selectedEvent.calendarId,
       });
     } else if (selectedDate) {
       setFormData(prev => ({
@@ -84,7 +87,7 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
         calendarId: calendars[0]?._id || "",
       }));
     }
-  }, [event, selectedDate, calendars]);
+  }, [selectedEvent, selectedDate, calendars]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,16 +119,31 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
     }
 
     try {
-      await createEvent({
-        title: formData.title,
-        description: formData.description || undefined,
-        startTime: Math.floor(startDateTime.getTime() / 1000),
-        endTime: Math.floor(endDateTime.getTime() / 1000),
-        isAllDay: formData.isAllDay,
-        location: formData.location || undefined,
-        calendarId: formData.calendarId as any, // Cast to ID type
-      });
-      
+      if (selectedEvent) {
+        // Update existing event
+        await updateEvent({
+          eventId: selectedEvent._id as any,
+          title: formData.title,
+          description: formData.description || undefined,
+          startTime: Math.floor(startDateTime.getTime() / 1000),
+          endTime: Math.floor(endDateTime.getTime() / 1000),
+          isAllDay: formData.isAllDay,
+          location: formData.location || undefined,
+          calendarId: formData.calendarId as any,
+        });
+      } else {
+        // Create new event
+        await createEvent({
+          title: formData.title,
+          description: formData.description || undefined,
+          startTime: Math.floor(startDateTime.getTime() / 1000),
+          endTime: Math.floor(endDateTime.getTime() / 1000),
+          isAllDay: formData.isAllDay,
+          location: formData.location || undefined,
+          calendarId: formData.calendarId as any,
+        });
+      }
+
       // Reset form and close modal
       setFormData({
         title: "",
@@ -138,17 +156,17 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
         location: "",
         calendarId: calendars[0]?._id || "",
       });
-      
+
       onClose();
     } catch (error) {
-      console.error("Error creating event:", error);
+      console.error("Error saving event:", error);
     }
   };
 
   const handleDelete = async () => {
-    if (event) {
+    if (selectedEvent) {
       try {
-        await deleteEvent({ eventId: event.id as any });
+        await deleteEvent({ eventId: selectedEvent._id as any });
         onClose();
       } catch (error) {
         console.error("Error deleting event:", error);
@@ -161,7 +179,7 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
-            {event ? "Edit Event" : "Create Event"}
+            {selectedEvent ? "Edit Event" : "Create Event"}
           </DialogTitle>
         </DialogHeader>
         
@@ -344,7 +362,7 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
           </div>
 
           <DialogFooter className="gap-2">
-            {event && (
+            {selectedEvent && (
               <Button
                 type="button"
                 variant="destructive"
@@ -358,7 +376,7 @@ export function EventModal({ isOpen, onClose, selectedDate, event, calendars = [
               Cancel
             </Button>
             <Button type="submit">
-              {event ? "Update" : "Create"}
+              {selectedEvent ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </form>

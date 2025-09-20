@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Calendar, Settings, Search } from "lucide-react";
+import { Plus, Brain } from "lucide-react";
 import { CalendarGrid } from "../../components/calendar/CalendarGrid";
 import { EventModal } from "../../components/calendar/EventModal";
 import { CalendarSidebar } from "../../components/calendar/CalendarSidebar";
+import AIScheduleModal from "../../components/ai-schedule-modal";
 import { Authenticated, Unauthenticated } from "convex/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -37,7 +38,9 @@ export default function CalendarPage() {
 function CalendarContent() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [isAIScheduleModalOpen, setIsAIScheduleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [visibleCalendarIds, setVisibleCalendarIds] = useState<string[] | null>(null);
 
@@ -78,6 +81,13 @@ function CalendarContent() {
 
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
+    setSelectedEvent(null);
+    setIsEventModalOpen(true);
+  };
+
+  const handleEventClick = (event: any) => {
+    setSelectedEvent(event);
+    setSelectedDate(null);
     setIsEventModalOpen(true);
   };
 
@@ -169,94 +179,93 @@ function CalendarContent() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4 shadow-sm">
+        <div className="bg-white border-b border-gray-100 px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3 lg:space-x-6 min-w-0">
-              <div className="flex items-center space-x-2 lg:space-x-3">
-                <Calendar className="h-6 w-6 lg:h-7 lg:w-7 text-blue-600" />
-                <h1 className="text-xl lg:text-2xl font-semibold text-gray-900">Calendar</h1>
-              </div>
-              
+            <div className="flex items-center space-x-6">
+              <h1 className="text-2xl font-semibold text-gray-900">{formatDateRange()}</h1>
+
               <div className="flex items-center space-x-1">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={handlePreviousPeriod}
-                  className="h-8 w-8 p-0 hover:bg-gray-100"
+                  className="h-8 w-8 p-0"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={handleNextPeriod}
-                  className="h-8 w-8 p-0 hover:bg-gray-100"
+                  className="h-8 w-8 p-0"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={handleToday}
-                  className="px-3 lg:px-4 h-8 text-sm font-medium hover:bg-gray-100"
+                  className="px-3 h-8 text-sm"
                 >
                   Today
                 </Button>
               </div>
-              
-              <h2 className="text-sm lg:text-lg font-medium text-gray-700 min-w-0 truncate">
-                {formatDateRange()}
-              </h2>
             </div>
-            
-            <div className="flex items-center space-x-2 lg:space-x-3">
+
+            <div className="flex items-center space-x-3">
               {/* View Mode Toggle */}
               <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <Button
                   variant={viewMode === "month" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("month")}
-                  className="px-2 lg:px-4 h-8 text-xs lg:text-sm font-medium"
+                  className="px-3 h-7 text-sm"
                 >
-                  <span className="hidden sm:inline">Month</span>
-                  <span className="sm:hidden">M</span>
+                  Month
                 </Button>
                 <Button
                   variant={viewMode === "week" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("week")}
-                  className="px-2 lg:px-4 h-8 text-xs lg:text-sm font-medium"
+                  className="px-3 h-7 text-sm"
                 >
-                  <span className="hidden sm:inline">Week</span>
-                  <span className="sm:hidden">W</span>
+                  Week
                 </Button>
                 <Button
                   variant={viewMode === "day" ? "default" : "ghost"}
                   size="sm"
                   onClick={() => setViewMode("day")}
-                  className="px-2 lg:px-4 h-8 text-xs lg:text-sm font-medium"
+                  className="px-3 h-7 text-sm"
                 >
-                  <span className="hidden sm:inline">Day</span>
-                  <span className="sm:hidden">D</span>
+                  Day
                 </Button>
               </div>
-              
+
               {/* Action Buttons */}
-              <Button variant="outline" size="sm" className="h-8 px-2 lg:px-3">
-                <Search className="h-4 w-4 lg:mr-2" />
-                <span className="hidden lg:inline">Search</span>
-              </Button>
-              <UserButton afterSignOutUrl="/" />
-              <Button 
-                onClick={() => setIsEventModalOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 h-8 px-3 lg:px-4 text-sm font-medium"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3"
+                onClick={() => setIsAIScheduleModalOpen(true)}
               >
-                <Plus className="h-4 w-4 lg:mr-2" />
-                <span className="hidden lg:inline">Create</span>
+                <Brain className="h-4 w-4 mr-2" />
+                AI Schedule
+              </Button>
+              <UserButton />
+              <Button
+                onClick={() => {
+                  setSelectedDate(new Date());
+                  setSelectedEvent(null);
+                  setIsEventModalOpen(true);
+                }}
+                className="h-8 px-4 text-sm"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New
               </Button>
             </div>
           </div>
@@ -268,6 +277,9 @@ function CalendarContent() {
             currentDate={currentDate}
             viewMode={viewMode}
             onDateClick={handleDateClick}
+            onEventClick={handleEventClick}
+            onViewModeChange={setViewMode}
+            onCurrentDateChange={setCurrentDate}
             events={filteredEvents}
             calendars={stableCalendars}
           />
@@ -277,9 +289,21 @@ function CalendarContent() {
       {/* Event Modal */}
       <EventModal
         isOpen={isEventModalOpen}
-        onClose={() => setIsEventModalOpen(false)}
+        onClose={() => {
+          setIsEventModalOpen(false);
+          setSelectedEvent(null);
+          setSelectedDate(null);
+        }}
         selectedDate={selectedDate}
+        selectedEvent={selectedEvent}
         calendars={calendars || []}
+      />
+
+      {/* AI Schedule Modal */}
+      <AIScheduleModal
+        isOpen={isAIScheduleModalOpen}
+        onClose={() => setIsAIScheduleModalOpen(false)}
+        defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
       />
     </div>
   );
