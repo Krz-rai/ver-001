@@ -33,41 +33,46 @@ interface CalendarGridProps {
   onCurrentDateChange?: (date: Date) => void;
   events?: CalendarEvent[];
   calendars?: Calendar[];
+  highlightedEventId?: Id<"events"> | null;
 }
 
-export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick, onViewModeChange, onCurrentDateChange, events = [], calendars = [] }: CalendarGridProps) {
+export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick, onViewModeChange, onCurrentDateChange, events = [], calendars = [], highlightedEventId }: CalendarGridProps) {
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [showAllEventsDate, setShowAllEventsDate] = useState<Date | null>(null);
   const updateEvent = useMutation(api.events.updateEvent);
 
-  const getColorClass = (calendarId: string) => {
+  const getColorClass = (calendarId: string, eventId?: string) => {
     const calendar = calendars.find(cal => cal._id === calendarId);
     const colorName = calendar?.color || 'blue';
+
+    // Check if this event is highlighted
+    const isHighlighted = highlightedEventId && eventId === highlightedEventId;
+
     const colorMap: Record<string, string> = {
-      'red': 'bg-red-500 border-red-600',
-      'blue': 'bg-blue-500 border-blue-600',
-      'green': 'bg-green-500 border-green-600',
-      'yellow': 'bg-yellow-500 border-yellow-600',
-      'purple': 'bg-purple-500 border-purple-600',
-      'pink': 'bg-pink-500 border-pink-600',
-      'indigo': 'bg-indigo-500 border-indigo-600',
-      'orange': 'bg-orange-500 border-orange-600',
-      'teal': 'bg-teal-500 border-teal-600',
-      'cyan': 'bg-cyan-500 border-cyan-600',
+      'red': isHighlighted ? 'bg-red-600 border-red-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-red-500 border-red-600',
+      'blue': isHighlighted ? 'bg-blue-600 border-blue-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-blue-500 border-blue-600',
+      'green': isHighlighted ? 'bg-green-600 border-green-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-green-500 border-green-600',
+      'yellow': isHighlighted ? 'bg-yellow-600 border-yellow-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-yellow-500 border-yellow-600',
+      'purple': isHighlighted ? 'bg-purple-600 border-purple-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-purple-500 border-purple-600',
+      'pink': isHighlighted ? 'bg-pink-600 border-pink-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-pink-500 border-pink-600',
+      'indigo': isHighlighted ? 'bg-indigo-600 border-indigo-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-indigo-500 border-indigo-600',
+      'orange': isHighlighted ? 'bg-orange-600 border-orange-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-orange-500 border-orange-600',
+      'teal': isHighlighted ? 'bg-teal-600 border-teal-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-teal-500 border-teal-600',
+      'cyan': isHighlighted ? 'bg-cyan-600 border-cyan-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-cyan-500 border-cyan-600',
     };
-    return colorMap[colorName] || 'bg-blue-500 border-blue-600';
+    return colorMap[colorName] || (isHighlighted ? 'bg-blue-600 border-blue-700 ring-2 ring-blue-400 ring-offset-1' : 'bg-blue-500 border-blue-600');
   };
 
   const formatTime = (date: Date) => {
-    return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   };
 
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
       const eventDate = new Date(event.startTime * 1000);
-      const eventDateUTC = new Date(eventDate.getUTCFullYear(), eventDate.getUTCMonth(), eventDate.getUTCDate());
-      const targetDateUTC = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      return eventDateUTC.getTime() === targetDateUTC.getTime();
+      const eventDateLocal = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+      const targetDateLocal = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      return eventDateLocal.getTime() === targetDateLocal.getTime();
     });
   };
 
@@ -81,7 +86,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
 
     const targetDate = date || currentDate;
     const newStart = new Date(targetDate);
-    newStart.setUTCHours(newStartHour, 0, 0, 0);
+    newStart.setHours(newStartHour, 0, 0, 0);
 
     const duration = draggedEvent.endTime - draggedEvent.startTime;
     const newStartTime = Math.floor(newStart.getTime() / 1000);
@@ -172,7 +177,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                         key={event._id}
                         className={cn(
                           "text-xs px-2 py-1 rounded cursor-pointer hover:opacity-90 text-white font-medium",
-                          getColorClass(event.calendarId)
+                          getColorClass(event.calendarId, event._id)
                         )}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -218,7 +223,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                   key={event._id}
                   className={cn(
                     "p-3 rounded cursor-pointer hover:opacity-90 text-white font-medium",
-                    getColorClass(event.calendarId)
+                    getColorClass(event.calendarId, event._id)
                   )}
                   onClick={() => {
                     onEventClick(event);
@@ -302,7 +307,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                     {getEventsForDate(day)
                       .filter((event) => {
                         const eventDate = new Date(event.startTime * 1000);
-                        return eventDate.getUTCHours() === hour;
+                        return eventDate.getHours() === hour;
                       })
                       .map((event) => {
                         const startTime = new Date(event.startTime * 1000);
@@ -317,7 +322,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                             onDragStart={(e) => handleEventDragStart(e, event)}
                             className={cn(
                               "absolute left-1 right-1 rounded px-2 py-1 text-xs text-white font-medium cursor-pointer hover:opacity-90",
-                              getColorClass(event.calendarId)
+                              getColorClass(event.calendarId, event._id)
                             )}
                             style={{ height: `${height}px`, zIndex: 10 }}
                             onClick={(e) => {
@@ -345,7 +350,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const now = new Date();
   const isCurrentDay = isToday(currentDate);
-  const currentHour = now.getUTCHours();
+  const currentHour = now.getHours();
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -375,7 +380,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                 {getEventsForDate(currentDate)
                   .filter((event) => {
                     const eventDate = new Date(event.startTime * 1000);
-                    return eventDate.getUTCHours() === hour;
+                    return eventDate.getHours() === hour;
                   })
                   .map((event) => {
                     const startTime = new Date(event.startTime * 1000);
@@ -390,7 +395,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
                         onDragStart={(e) => handleEventDragStart(e, event)}
                         className={cn(
                           "absolute left-2 right-2 rounded-lg px-3 py-2 text-sm text-white font-medium cursor-pointer hover:opacity-90 shadow-sm",
-                          getColorClass(event.calendarId)
+                          getColorClass(event.calendarId, event._id)
                         )}
                         style={{ height: `${height}px`, zIndex: 10 }}
                         onClick={(e) => {
