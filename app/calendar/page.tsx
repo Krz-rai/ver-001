@@ -6,6 +6,7 @@ import { CalendarGrid } from "../../components/calendar/CalendarGrid";
 import { EventModal } from "../../components/calendar/EventModal";
 import { CalendarSidebar } from "../../components/calendar/CalendarSidebar";
 import AIScheduleModal from "../../components/ai-schedule-modal";
+import CornerAIChat from "../../components/corner-ai-chat";
 import { Authenticated, Unauthenticated } from "convex/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -295,6 +296,11 @@ function CalendarContent() {
       <AIScheduleModal
         isOpen={isAIScheduleModalOpen}
         onClose={() => setIsAIScheduleModalOpen(false)}
+        defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
+      />
+
+      {/* Corner AI Chat */}
+      <CornerAIChat 
         defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
       />
     </div>
