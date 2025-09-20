@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Plus, Brain, Clock, CheckCircle2, Loader2, Calendar } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Trash2, Plus, Brain, Clock, CheckCircle2, Loader2, Calendar, FileText, Settings, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
@@ -19,6 +21,14 @@ interface Task {
   duration: number; // minutes
   deadline?: string; // ISO date string
   startDate?: string; // ISO date string - earliest date this task can start
+}
+
+interface ParsedTask {
+  title: string;
+  priority: 'low' | 'medium' | 'high';
+  estimatedDuration: number;
+  deadline?: string;
+  startDate?: string;
 }
 
 interface AIScheduleModalProps {
@@ -35,13 +45,29 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledCount, setScheduledCount] = useState(0);
 
+  // Natural language parsing state
+  const [naturalLanguageText, setNaturalLanguageText] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
+  const [activeTab, setActiveTab] = useState('natural');
+  const [parseResults, setParseResults] = useState<{
+    totalParsed: number;
+    averageConfidence: number;
+    suggestions: string[];
+  } | null>(null);
+
   const createEvent = useMutation(api.events.createEvent);
+
+  const [currentDate, setCurrentDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setCurrentDate(new Date());
+  }, []);
 
   // Get existing events for the entire month to show AI what's already scheduled
   const getMonthRange = () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    if (!currentDate) return { startDate: 0, endDate: 0 };
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
     return {
       startDate: Math.floor(startOfMonth.getTime() / 1000),
       endDate: Math.floor(endOfMonth.getTime() / 1000),
@@ -70,7 +96,7 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
     setNewTaskTitle('');
   };
 
-  const updateTask = (index: number, field: keyof Task, value: any) => {
+  const updateTask = (index: number, field: keyof Task, value: string | number | undefined) => {
     const updatedTasks = [...tasks];
     updatedTasks[index] = { ...updatedTasks[index], [field]: value };
     setTasks(updatedTasks);
@@ -83,6 +109,53 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       addTask();
+    }
+  };
+
+  const parseNaturalLanguageTasks = async () => {
+    if (!naturalLanguageText.trim()) return;
+
+    setIsParsing(true);
+    try {
+      const response = await fetch('https://careful-boar-557.convex.site/api/parse-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: naturalLanguageText,
+          defaultDuration: 60,
+          workingHours,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to parse tasks');
+
+      const { tasks: parsedTasks, summary, suggestions } = await response.json();
+
+      // Convert parsed tasks to our Task interface format
+      const newTasks: Task[] = parsedTasks.map((parsed: ParsedTask, index: number) => ({
+        id: `parsed-${Date.now()}-${index}`,
+        title: parsed.title,
+        priority: parsed.priority,
+        duration: parsed.estimatedDuration,
+        deadline: parsed.deadline,
+        startDate: parsed.startDate,
+      }));
+
+      // Add parsed tasks to existing tasks
+      setTasks(prevTasks => [...prevTasks, ...newTasks]);
+      setParseResults({
+        totalParsed: summary.totalParsed,
+        averageConfidence: summary.averageConfidence,
+        suggestions,
+      });
+
+      // Clear the text area and switch to advanced tab to show results
+      setNaturalLanguageText('');
+      setActiveTab('advanced');
+    } catch (error) {
+      console.error('Failed to parse tasks:', error);
+    } finally {
+      setIsParsing(false);
     }
   };
 
@@ -101,7 +174,7 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
       }));
 
       // Call Convex HTTP action for AI scheduling
-      const response = await fetch('https://bright-bass-258.convex.site/api/generate-schedule', {
+      const response = await fetch('https://careful-boar-557.convex.site/api/generate-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,7 +201,7 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
       const { schedule } = await response.json();
 
       // Create calendar events for each scheduled task
-      const eventPromises = schedule.map((scheduledTask: any) =>
+      const eventPromises = schedule.map((scheduledTask: { title: string; reasoning?: string; startTime: string; endTime: string }) =>
         createEvent({
           title: scheduledTask.title,
           description: scheduledTask.reasoning || '',
@@ -158,8 +231,11 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
   const handleClose = () => {
     setTasks([]);
     setNewTaskTitle('');
+    setNaturalLanguageText('');
     setIsScheduled(false);
     setScheduledCount(0);
+    setActiveTab('natural');
+    setParseResults(null);
     onClose();
   };
 
@@ -193,7 +269,7 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Brain className="w-5 h-5 text-blue-600" />
@@ -201,23 +277,96 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Quick Task Entry */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Add tasks</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Type a task and press Enter..."
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="flex-1"
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="natural" className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Natural Language
+            </TabsTrigger>
+            <TabsTrigger value="advanced" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Advanced
+              {tasks.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {tasks.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="natural" className="space-y-4">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Describe your tasks</Label>
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>Type or paste your tasks in any format. Examples:</p>
+                <div className="bg-gray-50 p-3 rounded-md text-xs">
+                  <p>• Call dentist to schedule cleaning</p>
+                  <p>• Review Q4 budget report (deadline: Friday)</p>
+                  <p>• URGENT: Fix production server issues (2 hours)</p>
+                  <p>• Schedule team meeting for next week</p>
+                </div>
+              </div>
+              <Textarea
+                placeholder="Enter your tasks here... Use bullet points, numbered lists, or just write naturally. The AI will understand!"
+                value={naturalLanguageText}
+                onChange={(e) => setNaturalLanguageText(e.target.value)}
+                className="min-h-[120px] resize-none"
+                disabled={isParsing}
               />
-              <Button onClick={addTask} size="sm" variant="ghost">
-                <Plus className="w-4 h-4" />
+              <Button
+                onClick={parseNaturalLanguageTasks}
+                disabled={!naturalLanguageText.trim() || isParsing}
+                className="w-full"
+              >
+                {isParsing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Parsing tasks...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Parse Tasks with AI
+                  </>
+                )}
               </Button>
             </div>
-          </div>
+
+            {parseResults && (
+              <div className="bg-blue-50 p-4 rounded-lg space-y-2">
+                <h4 className="text-sm font-medium text-blue-900">Parse Results</h4>
+                <p className="text-xs text-blue-700">
+                  Successfully parsed {parseResults.totalParsed} tasks with {Math.round(parseResults.averageConfidence * 100)}% average confidence
+                </p>
+                {parseResults.suggestions.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-blue-900">Suggestions:</p>
+                    {parseResults.suggestions.map((suggestion, index) => (
+                      <p key={index} className="text-xs text-blue-600">• {suggestion}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="advanced" className="space-y-4">
+            {/* Quick Task Entry */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Add individual tasks</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Type a task and press Enter..."
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="flex-1"
+                />
+                <Button onClick={addTask} size="sm" variant="ghost">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
 
           {/* Task List */}
           {tasks.length > 0 && (
@@ -319,10 +468,15 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
             </div>
           )}
 
-          {/* Working Hours */}
+          </TabsContent>
+        </Tabs>
+
+        {/* Working Hours - shared between both tabs */}
+        <div className="space-y-3 border-t pt-4">
+          <Label className="text-sm font-medium">Working Hours</Label>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm">Start time</Label>
+              <Label className="text-xs text-muted-foreground">Start time</Label>
               <Input
                 type="time"
                 value={workingHours.start}
@@ -331,7 +485,7 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
               />
             </div>
             <div>
-              <Label className="text-sm">End time</Label>
+              <Label className="text-xs text-muted-foreground">End time</Label>
               <Input
                 type="time"
                 value={workingHours.end}
@@ -340,34 +494,34 @@ export default function AIScheduleModal({ isOpen, onClose, defaultCalendarId }: 
               />
             </div>
           </div>
+        </div>
 
-          {/* Generate Button */}
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={handleClose}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={generateAndSchedule}
-              disabled={tasks.length === 0 || isGenerating || !defaultCalendarId}
-              className="flex-1"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Scheduling...
-                </>
-              ) : (
-                <>
-                  <Brain className="w-4 h-4 mr-2" />
-                  Schedule {tasks.length} task{tasks.length !== 1 ? 's' : ''}
-                </>
-              )}
-            </Button>
-          </div>
+        {/* Generate Button */}
+        <div className="flex gap-3 border-t pt-4">
+          <Button
+            variant="outline"
+            onClick={handleClose}
+            className="flex-1"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={generateAndSchedule}
+            disabled={tasks.length === 0 || isGenerating || !defaultCalendarId}
+            className="flex-1"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Scheduling...
+              </>
+            ) : (
+              <>
+                <Brain className="w-4 h-4 mr-2" />
+                Schedule {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+              </>
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

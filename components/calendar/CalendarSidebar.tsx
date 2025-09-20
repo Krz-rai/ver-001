@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CalendarSidebarProps {
@@ -20,6 +20,7 @@ interface CalendarSidebarProps {
   onCreateCalendar: () => void;
   onVisibleCalendarsChange?: (calendarIds: string[]) => void;
   onCalendarSelect?: (calendarId: string) => void; // backward compat
+  onOpenAISchedule?: () => void;
 }
 
 export function CalendarSidebar({
@@ -30,6 +31,7 @@ export function CalendarSidebar({
   onCreateCalendar,
   onVisibleCalendarsChange,
   onCalendarSelect,
+  onOpenAISchedule,
 }: CalendarSidebarProps) {
   // Normalize calendars
   const displayCalendars = useMemo(
@@ -80,12 +82,18 @@ export function CalendarSidebar({
     return days;
   }, [startDayOfWeek, daysInMonth, currentDate]);
 
+  const [today, setToday] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setToday(new Date());
+  }, []);
+
   const isToday = (date: Date) => {
-    const now = new Date();
+    if (!today) return false;
     return (
-      date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate()
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate()
     );
   };
 
@@ -96,12 +104,22 @@ export function CalendarSidebar({
 
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-      {/* Create */}
-      <div className="p-4 border-b border-gray-200">
-        <Button onClick={onCreateCalendar} className="w-full h-9">
-          <Plus className="h-4 w-4 mr-2" />
-          New Event
-        </Button>
+      {/* Action Buttons */}
+      <div className="px-6 py-4 border-b border-gray-200 h-20 flex items-center">
+        <div className="flex gap-2 w-full">
+          <Button onClick={onCreateCalendar} className="flex-1 h-10">
+            <Plus className="h-4 w-4 mr-2" />
+            New Event
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onOpenAISchedule}
+            className="flex-1 h-10"
+          >
+            <Brain className="h-4 w-4 mr-2" />
+            Add Tasks
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">

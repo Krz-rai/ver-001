@@ -194,13 +194,21 @@ Use ISO datetime format for times (YYYY-MM-DDTHH:mm:ss.000Z). Generate taskIds a
         return 'medium';
       };
 
-      // Enhanced scheduling with conflict resolution
+      // Enhanced scheduling with conflict resolution and comprehensive debugging
       const scheduleWithRescheduling = () => {
+        console.log('🚀 STARTING SCHEDULING PROCESS');
+        console.log('📋 Input tasks:', tasks.map(t => ({ title: t.title, deadline: t.deadline, duration: t.estimatedDuration, priority: t.priority })));
+        console.log('📅 Current date:', currentDate.toISOString());
+        console.log('🕐 Working hours:', defaultPreferences.workingHours);
+        console.log('📆 Working days:', defaultPreferences.workingDays);
+        console.log('⏰ Buffer time:', defaultPreferences.breakDuration, 'minutes');
+        console.log('🎯 Existing events:', existingEvents.length);
+
         const allEvents = [...existingEvents];
         const scheduledTasks: any[] = [];
         const unscheduledTasks: any[] = [];
         const movedTasks: any[] = [];
-        
+
         // Process tasks by priority and deadline
         const sortedTasks = [...tasks].sort((a, b) => {
           // Deadline tasks first
@@ -213,187 +221,266 @@ Use ISO datetime format for times (YYYY-MM-DDTHH:mm:ss.000Z). Generate taskIds a
           const priorityOrder = { high: 0, medium: 1, low: 2 };
           return priorityOrder[a.priority || 'medium'] - priorityOrder[b.priority || 'medium'];
         });
-        
-        for (const task of sortedTasks) {
+
+        console.log('📊 Sorted tasks by priority/deadline:', sortedTasks.map(t => ({ title: t.title, deadline: t.deadline, priority: t.priority })));
+
+        for (let taskIndex = 0; taskIndex < sortedTasks.length; taskIndex++) {
+          const task = sortedTasks[taskIndex];
+          console.log(`\n🎯 === SCHEDULING TASK ${taskIndex + 1}: "${task.title}" ===`);
+
           const taskDuration = task.estimatedDuration || 60;
           const taskDeadline = task.deadline ? new Date(task.deadline) : null;
           const taskStartDate = task.startDate ? new Date(task.startDate) : currentDate;
-          
-          // Determine scheduling window
-          const schedulingStartDate = new Date(Math.max(taskStartDate.getTime(), currentDate.getTime()));
-          const schedulingEndDate = taskDeadline || new Date(schedulingStartDate.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
-          
-          let scheduled = false;
-          
-          // Try to schedule on each day within the window
-          for (let d = new Date(schedulingStartDate); d <= schedulingEndDate && !scheduled; d.setDate(d.getDate() + 1)) {
-            const dateStr = d.toISOString().split('T')[0];
-            
-            // Skip non-working days
-            const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d.getDay()];
-            if (!defaultPreferences.workingDays.includes(dayName)) continue;
-            
-            // Get events for this day
-            const dayEvents = allEvents.filter(e => e.startTime.startsWith(dateStr));
-            
-            // Find available slots
-            const workStart = new Date(`${dateStr}T${defaultPreferences.workingHours.start}:00.000Z`);
-            const workEnd = new Date(`${dateStr}T${defaultPreferences.workingHours.end}:00.000Z`);
-            const bufferMs = defaultPreferences.breakDuration * 60 * 1000;
-            
-            // Sort events by start time
-            const sortedDayEvents = [...dayEvents].sort((a, b) => 
-              new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-            );
-            
-            // Find a slot for the task
-            let taskStart = workStart;
-            
-            for (const event of sortedDayEvents) {
-              const eventStart = new Date(event.startTime);
-              const eventEnd = new Date(event.endTime);
-              const availableTime = (eventStart.getTime() - taskStart.getTime() - bufferMs) / 60000;
-              
-              if (availableTime >= taskDuration) {
-                // Found a slot!
-                const taskEnd = new Date(taskStart.getTime() + taskDuration * 60000);
-                scheduledTasks.push({
-                  taskId: task.id || `task-${Date.now()}`,
-                  title: task.title,
-                  description: task.description,
-                  startTime: taskStart.toISOString(),
-                  endTime: taskEnd.toISOString(),
-                  priority: task.priority || 'medium',
-                  reasoning: `Scheduled in available ${availableTime}-minute slot on ${dateStr}`,
-                });
-                
-                // Add to allEvents to block this time
-                allEvents.push({
-                  title: task.title,
-                  startTime: taskStart.toISOString(),
-                  endTime: taskEnd.toISOString(),
-                  description: task.description,
-                });
-                
-                scheduled = true;
+
+          console.log('⏱️ Task duration:', taskDuration, 'minutes');
+          console.log('📅 Task deadline:', taskDeadline?.toISOString() || 'None');
+          console.log('🚀 Task earliest start:', taskStartDate.toISOString());
+
+          // Determine scheduling window - FIXED: Handle after-hours and weekend conflicts
+          let schedulingStartDate = new Date(Math.max(taskStartDate.getTime(), currentDate.getTime()));
+
+          // If current time is after working hours, start from next working day
+          const currentHour = schedulingStartDate.getHours();
+          const workEndHour = parseInt(defaultPreferences.workingHours.end.split(':')[0]);
+
+          if (currentHour >= workEndHour) {
+            console.log(`⏰ Current time (${currentHour}:00) is after working hours (ends at ${workEndHour}:00)`);
+            // Move to next day at start of working hours
+            schedulingStartDate = new Date(schedulingStartDate);
+            schedulingStartDate.setDate(schedulingStartDate.getDate() + 1);
+            schedulingStartDate.setHours(parseInt(defaultPreferences.workingHours.start.split(':')[0]), 0, 0, 0);
+            console.log(`🔄 Adjusted start to next day: ${schedulingStartDate.toISOString()}`);
+          }
+
+          // If start lands on a non-working day, push forward to the next working day at working start
+          const dayNameAtStart = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][schedulingStartDate.getDay()];
+          if (!defaultPreferences.workingDays.includes(dayNameAtStart)) {
+            console.log(`⛔ Start date ${schedulingStartDate.toISOString()} falls on ${dayNameAtStart} (non-working day)`);
+            while (true) {
+              schedulingStartDate.setDate(schedulingStartDate.getDate() + 1);
+              const dn = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][schedulingStartDate.getDay()];
+              if (defaultPreferences.workingDays.includes(dn)) {
+                schedulingStartDate.setHours(parseInt(defaultPreferences.workingHours.start.split(':')[0]), 0, 0, 0);
+                console.log(`🔄 Moved start to next working day: ${schedulingStartDate.toISOString()}`);
                 break;
               }
-              
-              taskStart = new Date(eventEnd.getTime() + bufferMs);
             }
-            
-            // Check if there's room after the last event
-            if (!scheduled && taskStart.getTime() + taskDuration * 60000 <= workEnd.getTime()) {
-              const taskEnd = new Date(taskStart.getTime() + taskDuration * 60000);
-              
-              // If this is a deadline task and we need to move something
-              if (task.deadline && sortedDayEvents.length > 0) {
-                // Find moveable lower-priority events
-                const moveableEvents = sortedDayEvents.filter(e => {
-                  const eventPriority = getEventPriority(e.title);
-                  const taskPriority = task.priority || 'high';
-                  const priorityOrder = { high: 0, medium: 1, low: 2 };
-                  return priorityOrder[eventPriority] > priorityOrder[taskPriority];
-                });
-                
-                if (moveableEvents.length > 0) {
-                  // Move the lowest priority event that conflicts
-                  const eventToMove = moveableEvents[moveableEvents.length - 1];
-                  const eventDuration = (new Date(eventToMove.endTime).getTime() - new Date(eventToMove.startTime).getTime()) / 60000;
-                  
-                  // Find a new slot for the moved event (next available day)
-                  const nextDay = new Date(d);
-                  nextDay.setDate(nextDay.getDate() + 1);
-                  const nextDateStr = nextDay.toISOString().split('T')[0];
-                  const nextWorkStart = new Date(`${nextDateStr}T${defaultPreferences.workingHours.start}:00.000Z`);
-                  const nextWorkEnd = new Date(`${nextDateStr}T${defaultPreferences.workingHours.end}:00.000Z`);
-                  
-                  // Schedule the deadline task in place of the moved event
-                  const movedEventStart = new Date(eventToMove.startTime);
-                  const taskEndTime = new Date(movedEventStart.getTime() + taskDuration * 60000);
-                  
-                  scheduledTasks.push({
-                    taskId: task.id || `task-${Date.now()}`,
-                    title: task.title,
-                    description: task.description,
-                    startTime: movedEventStart.toISOString(),
-                    endTime: taskEndTime.toISOString(),
-                    priority: task.priority || 'high',
-                    reasoning: `High-priority deadline task. Moved '${eventToMove.title}' to make room.`,
-                  });
-                  
-                  // Record the move
-                  movedTasks.push({
-                    title: eventToMove.title,
-                    fromDate: dateStr,
-                    toDate: nextDateStr,
-                    reason: `Moved to accommodate high-priority deadline task '${task.title}'`,
-                  });
-                  
-                  // Update allEvents to reflect the change
-                  const eventIndex = allEvents.findIndex(e => 
-                    e.title === eventToMove.title && e.startTime === eventToMove.startTime
-                  );
-                  if (eventIndex !== -1) {
-                    allEvents[eventIndex] = {
-                      ...eventToMove,
-                      startTime: nextWorkStart.toISOString(),
-                      endTime: new Date(nextWorkStart.getTime() + eventDuration * 60000).toISOString(),
-                    };
-                  }
-                  
-                  // Add the new task to allEvents
-                  allEvents.push({
-                    title: task.title,
-                    startTime: movedEventStart.toISOString(),
-                    endTime: taskEndTime.toISOString(),
-                    description: task.description,
-                  });
-                  
-                  scheduled = true;
+          }
+
+          // Extend deadline if it falls on non-working days
+          let schedulingEndDate = taskDeadline || new Date(schedulingStartDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+          if (taskDeadline) {
+            const deadlineDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][taskDeadline.getDay()];
+            if (!defaultPreferences.workingDays.includes(deadlineDay)) {
+              console.log(`⚠️ Deadline ${taskDeadline.toISOString()} falls on ${deadlineDay} (non-working day)`);
+              // Extend to next working day after deadline
+              let extendedDeadline = new Date(taskDeadline);
+              while (true) {
+                extendedDeadline.setDate(extendedDeadline.getDate() + 1);
+                const extendedDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][extendedDeadline.getDay()];
+                if (defaultPreferences.workingDays.includes(extendedDay)) {
+                  schedulingEndDate = extendedDeadline;
+                  console.log(`🔄 Extended deadline to next working day: ${schedulingEndDate.toISOString()}`);
                   break;
                 }
               }
-              
-              if (!scheduled) {
-                // Normal scheduling without conflict
-                scheduledTasks.push({
-                  taskId: task.id || `task-${Date.now()}`,
-                  title: task.title,
-                  description: task.description,
-                  startTime: taskStart.toISOString(),
-                  endTime: taskEnd.toISOString(),
-                  priority: task.priority || 'medium',
-                  reasoning: `Scheduled at end of day on ${dateStr}`,
-                });
-                
-                allEvents.push({
-                  title: task.title,
-                  startTime: taskStart.toISOString(),
-                  endTime: taskEnd.toISOString(),
-                  description: task.description,
-                });
-                
-                scheduled = true;
-              }
             }
           }
-          
+
+          // Snap end of window to end of working hours on the effective deadline date
+          const workEndHourForWindow = parseInt(defaultPreferences.workingHours.end.split(':')[0]);
+          schedulingEndDate = new Date(schedulingEndDate);
+          schedulingEndDate.setHours(workEndHourForWindow, 0, 0, 0);
+
+          console.log('🪟 Scheduling window:', schedulingStartDate.toISOString(), 'to', schedulingEndDate.toISOString());
+
+          let scheduled = false;
+
+          // Try to schedule on each day within the window
+          for (let d = new Date(schedulingStartDate); d <= schedulingEndDate && !scheduled; d.setDate(d.getDate() + 1)) {
+            const dateStr = d.toISOString().split('T')[0];
+            console.log(`\n📆 Trying date: ${dateStr} (${d.toLocaleDateString('en-US', { weekday: 'long' })})`);
+
+            // Skip non-working days
+            const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d.getDay()];
+            if (!defaultPreferences.workingDays.includes(dayName)) {
+              console.log(`❌ Skipping ${dayName} - not a working day`);
+              continue;
+            }
+
+            console.log(`✅ ${dayName} is a working day, proceeding...`);
+
+            // Get events for this day
+            const dayEvents = allEvents.filter(e => e.startTime.startsWith(dateStr));
+            console.log(`📅 Events on ${dateStr}:`, dayEvents.length);
+            dayEvents.forEach((e, i) => {
+              console.log(`  ${i + 1}. "${e.title}" ${e.startTime} - ${e.endTime}`);
+            });
+
+            // Find available slots - FIXED: Use local time, not UTC
+            const workStart = new Date(`${dateStr}T${defaultPreferences.workingHours.start}:00`);
+            const workEnd = new Date(`${dateStr}T${defaultPreferences.workingHours.end}:00`);
+            const bufferMs = defaultPreferences.breakDuration * 60 * 1000;
+
+            console.log(`🕐 Working hours: ${workStart.toISOString()} - ${workEnd.toISOString()}`);
+            console.log(`⏱️ Buffer time: ${defaultPreferences.breakDuration} minutes (${bufferMs}ms)`);
+
+            // Sort events by start time
+            const sortedDayEvents = [...dayEvents].sort((a, b) =>
+              new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+            );
+
+            // CASE 1: No events - schedule at start of day
+            if (sortedDayEvents.length === 0) {
+              console.log('🟢 No events today - scheduling at start of working day');
+              const taskEnd = new Date(workStart.getTime() + taskDuration * 60000);
+
+              if (taskEnd.getTime() <= workEnd.getTime()) {
+                console.log(`✅ SCHEDULED: ${workStart.toISOString()} - ${taskEnd.toISOString()}`);
+                scheduledTasks.push({
+                  taskId: task.id || `task-${Date.now()}-${taskIndex}`,
+                  title: task.title,
+                  description: task.description,
+                  startTime: workStart.toISOString(),
+                  endTime: taskEnd.toISOString(),
+                  priority: task.priority || 'medium',
+                  reasoning: `Scheduled at start of day (${dateStr}) - no conflicts`,
+                });
+
+                // Add to allEvents to block this time for future tasks
+                allEvents.push({
+                  title: task.title,
+                  startTime: workStart.toISOString(),
+                  endTime: taskEnd.toISOString(),
+                  description: task.description,
+                });
+
+                scheduled = true;
+                break;
+              } else {
+                console.log(`❌ Task too long for working day: ${taskDuration} minutes > ${(workEnd.getTime() - workStart.getTime()) / 60000} minutes available`);
+              }
+            } else {
+              // CASE 2: Events exist - find gaps
+              console.log('🔍 Looking for gaps between events...');
+              let taskStart = workStart;
+
+              for (let eventIndex = 0; eventIndex < sortedDayEvents.length; eventIndex++) {
+                const event = sortedDayEvents[eventIndex];
+                const eventStart = new Date(event.startTime);
+                const eventEnd = new Date(event.endTime);
+
+                console.log(`🎯 Checking gap before event ${eventIndex + 1}: "${event.title}"`);
+                console.log(`   Event: ${eventStart.toISOString()} - ${eventEnd.toISOString()}`);
+                console.log(`   Available slot: ${taskStart.toISOString()} - ${new Date(eventStart.getTime() - bufferMs).toISOString()}`);
+
+                const gapEndTime = eventStart.getTime() - bufferMs;
+                const availableTime = (gapEndTime - taskStart.getTime()) / 60000;
+
+                console.log(`   Available time: ${availableTime} minutes (need ${taskDuration})`);
+
+                if (availableTime >= taskDuration) {
+                  // Found a slot!
+                  const taskEnd = new Date(taskStart.getTime() + taskDuration * 60000);
+                  console.log(`✅ SCHEDULED: ${taskStart.toISOString()} - ${taskEnd.toISOString()}`);
+
+                  scheduledTasks.push({
+                    taskId: task.id || `task-${Date.now()}-${taskIndex}`,
+                    title: task.title,
+                    description: task.description,
+                    startTime: taskStart.toISOString(),
+                    endTime: taskEnd.toISOString(),
+                    priority: task.priority || 'medium',
+                    reasoning: `Scheduled in ${Math.floor(availableTime)}-minute gap before "${event.title}" on ${dateStr}`,
+                  });
+
+                  // Add to allEvents to block this time
+                  allEvents.push({
+                    title: task.title,
+                    startTime: taskStart.toISOString(),
+                    endTime: taskEnd.toISOString(),
+                    description: task.description,
+                  });
+
+                  scheduled = true;
+                  break;
+                }
+
+                // Move to after this event + buffer
+                taskStart = new Date(eventEnd.getTime() + bufferMs);
+                console.log(`   Next slot starts at: ${taskStart.toISOString()}`);
+              }
+
+              // CASE 3: Check if there's room after the last event
+              if (!scheduled) {
+                console.log('🔍 Checking slot after last event...');
+                const lastEvent = sortedDayEvents[sortedDayEvents.length - 1];
+                const afterLastEvent = new Date(new Date(lastEvent.endTime).getTime() + bufferMs);
+                const availableTimeAfter = (workEnd.getTime() - afterLastEvent.getTime()) / 60000;
+
+                console.log(`   After last event: ${afterLastEvent.toISOString()} - ${workEnd.toISOString()}`);
+                console.log(`   Available time: ${availableTimeAfter} minutes (need ${taskDuration})`);
+
+                if (availableTimeAfter >= taskDuration) {
+                  const taskEnd = new Date(afterLastEvent.getTime() + taskDuration * 60000);
+                  console.log(`✅ SCHEDULED: ${afterLastEvent.toISOString()} - ${taskEnd.toISOString()}`);
+
+                  scheduledTasks.push({
+                    taskId: task.id || `task-${Date.now()}-${taskIndex}`,
+                    title: task.title,
+                    description: task.description,
+                    startTime: afterLastEvent.toISOString(),
+                    endTime: taskEnd.toISOString(),
+                    priority: task.priority || 'medium',
+                    reasoning: `Scheduled after last event on ${dateStr}`,
+                  });
+
+                  allEvents.push({
+                    title: task.title,
+                    startTime: afterLastEvent.toISOString(),
+                    endTime: taskEnd.toISOString(),
+                    description: task.description,
+                  });
+
+                  scheduled = true;
+                } else {
+                  console.log(`❌ Not enough time after last event: ${availableTimeAfter} < ${taskDuration}`);
+                }
+              }
+            }
+
+            if (scheduled) {
+              console.log(`🎉 Task "${task.title}" successfully scheduled on ${dateStr}`);
+              break;
+            } else {
+              console.log(`❌ Could not fit task on ${dateStr}`);
+            }
+          }
+
           if (!scheduled) {
+            console.log(`❌ FAILED TO SCHEDULE: "${task.title}"`);
+            const reason = task.deadline
+              ? `Could not find a ${taskDuration}-minute slot before effective deadline ${schedulingEndDate.toISOString().split('T')[0]}`
+              : `No available ${taskDuration}-minute slot found in 30-day scheduling window`;
+            console.log(`   Reason: ${reason}`);
+
             unscheduledTasks.push({
-              taskId: task.id || `task-${Date.now()}`,
+              taskId: task.id || `task-${Date.now()}-${taskIndex}`,
               title: task.title,
-              reason: task.deadline 
-                ? `Could not find or create a ${taskDuration}-minute slot before deadline ${task.deadline}` 
-                : `No available ${taskDuration}-minute slot found in scheduling window`,
+              reason: reason,
             });
           }
         }
-        
-        // Calculate metrics
+
+        // Calculate metrics and generate summary
+        console.log('\n📊 SCHEDULING SUMMARY:');
+        console.log(`✅ Successfully scheduled: ${scheduledTasks.length}/${tasks.length} tasks`);
+        console.log(`❌ Unscheduled: ${unscheduledTasks.length} tasks`);
+
         const workloadDistribution: Record<string, number> = {};
         let latestDate: string | null = null;
-        
+
         for (const task of scheduledTasks) {
           const date = task.startTime.split('T')[0];
           workloadDistribution[date] = (workloadDistribution[date] || 0) + 1;
@@ -401,8 +488,20 @@ Use ISO datetime format for times (YYYY-MM-DDTHH:mm:ss.000Z). Generate taskIds a
             latestDate = date;
           }
         }
-        
-        return {
+
+        console.log('📅 Workload distribution:', workloadDistribution);
+        console.log('🏁 Latest completion date:', latestDate);
+
+        const recommendations = [];
+        if (unscheduledTasks.length > 0) {
+          recommendations.push('Consider extending working hours or adjusting deadlines for unscheduled tasks');
+          recommendations.push('Review task durations - some may be overestimated');
+        }
+        if (scheduledTasks.length > 0) {
+          recommendations.push('Schedule looks good! Check the calendar for your new tasks');
+        }
+
+        const result = {
           schedule: scheduledTasks,
           summary: {
             totalTasks: tasks.length,
@@ -412,12 +511,11 @@ Use ISO datetime format for times (YYYY-MM-DDTHH:mm:ss.000Z). Generate taskIds a
             workloadDistribution,
             movedTasks: movedTasks.length > 0 ? movedTasks : undefined,
           },
-          recommendations: [
-            ...movedTasks.map(m => `Moved '${m.title}' from ${m.fromDate} to ${m.toDate} to accommodate deadline tasks`),
-            ...(unscheduledTasks.length > 0 ? ['Consider extending working hours or deadline flexibility for unscheduled tasks'] : []),
-            'Review moved tasks to ensure the new schedule works for you',
-          ],
+          recommendations,
         };
+
+        console.log('🎯 Final result:', result);
+        return result;
       };
 
       // Execute the intelligent scheduling
@@ -804,7 +902,159 @@ http.route({
   }),
 });
 
+// Natural Language Task Parser endpoint
+const ParseTasksRequestSchema = z.object({
+  text: z.string().min(1, "Text cannot be empty"),
+  defaultDuration: z.number().optional().default(60), // default task duration in minutes
+  workingHours: z.object({
+    start: z.string().default('09:00'),
+    end: z.string().default('17:00'),
+  }).optional(),
+});
+
+const ParsedTaskSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  priority: z.enum(['low', 'medium', 'high']),
+  estimatedDuration: z.number(), // in minutes
+  deadline: z.string().optional(), // ISO date string
+  startDate: z.string().optional(), // ISO date string
+  keywords: z.array(z.string()).optional(), // extracted keywords for context
+  confidence: z.number().min(0).max(1), // parsing confidence score
+});
+
+const ParseTasksResponseSchema = z.object({
+  tasks: z.array(ParsedTaskSchema),
+  summary: z.object({
+    totalParsed: z.number(),
+    averageConfidence: z.number(),
+    detectedPatterns: z.array(z.string()),
+  }),
+  suggestions: z.array(z.string()), // AI suggestions for improvement
+});
+
+http.route({
+  path: "/api/parse-tasks",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    try {
+      const body = await req.json();
+      const { text, defaultDuration, workingHours } = ParseTasksRequestSchema.parse(body);
+
+      const cerebras = getCerebrasProvider();
+      const model = cerebras('gpt-oss-120b');
+
+      // Build the parsing prompt
+      const systemPrompt = `You are an expert task parser. Convert natural language text into structured task objects.
+
+**PARSING RULES:**
+- Extract individual tasks from various formats (bullet lists, numbered lists, paragraphs)
+- Assign priority based on keywords and position in list (first items = higher priority)
+- Estimate duration based on task complexity and keywords
+- Extract deadlines from natural language (e.g., "by Friday", "next week", "urgent")
+- Detect start date constraints (e.g., "starting Monday", "after vacation")
+- Maintain original task ordering for priority assignment
+
+**PRIORITY ASSIGNMENT:**
+- HIGH: urgent, asap, critical, deadline, important, first, emergency
+- MEDIUM: normal, regular, standard (or no keywords)
+- LOW: low priority, later, when time permits, optional
+
+**DURATION ESTIMATION:**
+- Quick/simple tasks: 15-30 minutes
+- Regular tasks: 30-90 minutes
+- Complex/meetings: 60-180 minutes
+- Projects/research: 120-240 minutes
+- Look for explicit time mentions: "(2 hours)", "30 min", etc.
+
+**DEADLINE DETECTION:**
+- "by [date]", "due [date]", "deadline [date]"
+- "this week", "next week", "end of month"
+- "Friday", "Monday", etc. (interpret as next occurrence)
+- "urgent" suggests deadline within 1-2 days
+
+**OUTPUT FORMAT:**
+Return valid JSON matching the schema with:
+- tasks: Array of parsed task objects
+- summary: Parsing statistics and detected patterns
+- suggestions: Recommendations for the user
+
+Use high confidence (0.8+) for clear tasks, medium (0.5-0.8) for somewhat ambiguous, low (0.3-0.5) for unclear.`;
+
+      const userPrompt = `Parse this natural language text into structured tasks:
+
+"${text}"
+
+Context:
+- Default task duration: ${defaultDuration} minutes
+- Working hours: ${workingHours?.start || '09:00'} - ${workingHours?.end || '17:00'}
+- Current date: ${new Date().toISOString().split('T')[0]}
+
+Instructions:
+1. Identify individual tasks (ignore non-task content)
+2. Assign priorities based on position (first = higher priority) and keywords
+3. Estimate realistic durations based on task complexity
+4. Extract any mentioned deadlines or time constraints
+5. Provide confidence scores for each parsed task
+6. Return structured JSON exactly matching the schema`;
+
+      const result = await generateObject({
+        model,
+        schema: ParseTasksResponseSchema,
+        system: systemPrompt,
+        prompt: userPrompt,
+        temperature: 0.3, // Lower temperature for more consistent parsing
+      });
+
+      console.log('Successfully parsed natural language tasks');
+      console.log('Parsed result:', result.object);
+
+      return new Response(JSON.stringify(result.object), {
+        status: 200,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }),
+      });
+
+    } catch (error) {
+      console.error('Task parsing error:', error);
+
+      const errorResponse = {
+        error: "Failed to parse tasks",
+        message: error instanceof Error ? error.message : "Unknown error occurred",
+        details: error instanceof z.ZodError ? error.issues : undefined,
+      };
+
+      return new Response(JSON.stringify(errorResponse), {
+        status: 500,
+        headers: new Headers({
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        }),
+      });
+    }
+  }),
+});
+
 // OPTIONS handlers for CORS
+http.route({
+  path: "/api/parse-tasks",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      headers: new Headers({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "86400",
+      }),
+    });
+  }),
+});
+
 http.route({
   path: "/api/generate-schedule",
   method: "OPTIONS",
