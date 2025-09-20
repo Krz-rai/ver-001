@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Brain } from "lucide-react";
 import { CalendarGrid } from "../../components/calendar/CalendarGrid";
 import { EventModal } from "../../components/calendar/EventModal";
 import { CalendarSidebar } from "../../components/calendar/CalendarSidebar";
@@ -36,19 +35,23 @@ export default function CalendarPage() {
 }
 
 function CalendarContent() {
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState<Date | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [selectedEvent, setSelectedEvent] = useState<{ _id: string; title: string; description?: string; startTime: number; endTime: number; calendarId: string; isAllDay?: boolean } | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isAIScheduleModalOpen, setIsAIScheduleModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
   const [visibleCalendarIds, setVisibleCalendarIds] = useState<string[] | null>(null);
 
+  // Initialize currentDate on client side to prevent hydration mismatch
+  useEffect(() => {
+    setCurrentDate(new Date());
+  }, []);
+
   // Convex queries and mutations - now use Clerk auth
   const calendars = useQuery(api.calendars.getUserCalendars);
   const stableCalendars = useMemo(() => calendars || [], [calendars]);
   const createDefaultCalendar = useMutation(api.calendars.createDefaultCalendar);
-  const updateEvent = useMutation(api.events.updateEvent);
 
   // Ensure user has a default calendar
   useEffect(() => {
@@ -59,6 +62,7 @@ function CalendarContent() {
 
   // Get date range for current view
   const getDateRange = () => {
+    if (!currentDate) return { startDate: 0, endDate: 0 };
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
     return {
@@ -85,26 +89,16 @@ function CalendarContent() {
     setIsEventModalOpen(true);
   };
 
-  const handleEventClick = (event: any) => {
+  const handleEventClick = (event: { _id: string; title: string; description?: string; startTime: number; endTime: number; calendarId: string; isAllDay?: boolean }) => {
     setSelectedEvent(event);
     setSelectedDate(null);
     setIsEventModalOpen(true);
   };
 
-  const handleEventMove = async (eventId: string, newStartTime: number, newEndTime: number) => {
-    try {
-      await updateEvent({
-        eventId: eventId as any,
-        startTime: newStartTime,
-        endTime: newEndTime,
-      });
-    } catch (error) {
-      console.error('Failed to move event:', error);
-      // You could add a toast notification here
-    }
-  };
+  // Removed unused handleEventMove function
 
   const handlePreviousPeriod = () => {
+    if (!currentDate) return;
     const newDate = new Date(currentDate);
     if (viewMode === "month") {
       newDate.setMonth(newDate.getMonth() - 1);
@@ -117,6 +111,7 @@ function CalendarContent() {
   };
 
   const handleNextPeriod = () => {
+    if (!currentDate) return;
     const newDate = new Date(currentDate);
     if (viewMode === "month") {
       newDate.setMonth(newDate.getMonth() + 1);
@@ -133,6 +128,8 @@ function CalendarContent() {
   };
 
   const formatDateRange = () => {
+    if (!currentDate) return "Loading...";
+    
     if (viewMode === "month") {
       return currentDate.toLocaleDateString("en-US", { 
         month: "long", 
@@ -162,25 +159,38 @@ function CalendarContent() {
     }
   };
 
+  // Show loading state while currentDate is being initialized
+  if (!currentDate) {
+    return (
+      <div className="flex h-screen bg-gray-50 items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading calendar...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar - Hidden on mobile */}
       <div className="hidden lg:block">
-        <CalendarSidebar 
+        <CalendarSidebar
           onCreateCalendar={() => setIsEventModalOpen(true)}
           calendars={stableCalendars}
           currentDate={currentDate}
           onDateChange={setCurrentDate}
           onGoToToday={handleToday}
           onVisibleCalendarsChange={setVisibleCalendarIds}
+          onOpenAISchedule={() => setIsAIScheduleModalOpen(true)}
         />
       </div>
       
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="bg-white border-b border-gray-100 px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white border-b border-gray-100 px-6 py-4 h-20 flex items-center">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center space-x-6">
               <h1 className="text-2xl font-semibold text-gray-900">{formatDateRange()}</h1>
 
@@ -205,18 +215,20 @@ function CalendarContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleToday}
-                  className="px-3 h-8 text-sm"
-                >
-                  Today
-                </Button>
               </div>
             </div>
 
             <div className="flex items-center space-x-3">
+              {/* Today Button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleToday}
+                className="px-3 h-8 text-sm"
+              >
+                Today
+              </Button>
+
               {/* View Mode Toggle */}
               <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <Button
@@ -245,28 +257,8 @@ function CalendarContent() {
                 </Button>
               </div>
 
-              {/* Action Buttons */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-3"
-                onClick={() => setIsAIScheduleModalOpen(true)}
-              >
-                <Brain className="h-4 w-4 mr-2" />
-                AI Schedule
-              </Button>
+              {/* User Button - Far Right */}
               <UserButton />
-              <Button
-                onClick={() => {
-                  setSelectedDate(new Date());
-                  setSelectedEvent(null);
-                  setIsEventModalOpen(true);
-                }}
-                className="h-8 px-4 text-sm"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New
-              </Button>
             </div>
           </div>
         </div>

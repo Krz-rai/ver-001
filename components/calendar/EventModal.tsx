@@ -17,10 +17,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon, Clock, MapPin } from "lucide-react";
-import { format } from "date-fns";
+// import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 
 interface EventModalProps {
   isOpen: boolean;
@@ -60,6 +61,18 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
     location: "",
     calendarId: "",
   });
+
+  // Initialize dates on client side to prevent hydration issues
+  useEffect(() => {
+    if (!selectedDate && !selectedEvent) {
+      const now = new Date();
+      setFormData(prev => ({
+        ...prev,
+        startDate: now,
+        endDate: now,
+      }));
+    }
+  }, [selectedDate, selectedEvent]);
 
   const [isStartDateOpen, setIsStartDateOpen] = useState(false);
   const [isEndDateOpen, setIsEndDateOpen] = useState(false);
@@ -122,14 +135,14 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
       if (selectedEvent) {
         // Update existing event
         await updateEvent({
-          eventId: selectedEvent._id as any,
+          eventId: selectedEvent._id as Id<"events">,
           title: formData.title,
           description: formData.description || undefined,
           startTime: Math.floor(startDateTime.getTime() / 1000),
           endTime: Math.floor(endDateTime.getTime() / 1000),
           isAllDay: formData.isAllDay,
           location: formData.location || undefined,
-          calendarId: formData.calendarId as any,
+          calendarId: formData.calendarId as Id<"calendars">,
         });
       } else {
         // Create new event
@@ -140,7 +153,7 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
           endTime: Math.floor(endDateTime.getTime() / 1000),
           isAllDay: formData.isAllDay,
           location: formData.location || undefined,
-          calendarId: formData.calendarId as any,
+          calendarId: formData.calendarId as Id<"calendars">,
         });
       }
 
@@ -166,7 +179,7 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
   const handleDelete = async () => {
     if (selectedEvent) {
       try {
-        await deleteEvent({ eventId: selectedEvent._id as any });
+        await deleteEvent({ eventId: selectedEvent._id as Id<"events"> });
         onClose();
       } catch (error) {
         console.error("Error deleting event:", error);
@@ -176,7 +189,7 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {selectedEvent ? "Edit Event" : "Create Event"}
@@ -221,10 +234,15 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.startDate ? format(formData.startDate, "PPP") : "Pick a date"}
+                    {formData.startDate ? formData.startDate.toLocaleDateString("en-US", {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    }) : "Pick a date"}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent className="w-auto p-0 z-50 min-w-[320px]" align="start" sideOffset={4}>
                   <Calendar
                     mode="single"
                     selected={formData.startDate}
@@ -235,6 +253,13 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
                       }
                     }}
                     initialFocus
+                    className="[--cell-size:3.5rem] p-4 [&_.rdp-day]:m-1 [&_.rdp-button]:w-10 [&_.rdp-button]:h-10"
+                    classNames={{
+                      week: "flex w-full mt-3 gap-2 justify-between",
+                      weekdays: "flex gap-2 justify-between mb-2",
+                      day: "relative text-center flex-1 min-w-[2.5rem]",
+                      table: "w-full"
+                    }}
                   />
                 </PopoverContent>
               </Popover>
@@ -253,10 +278,15 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.endDate ? format(formData.endDate, "PPP") : "Pick a date"}
+                    {formData.endDate ? formData.endDate.toLocaleDateString("en-US", {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    }) : "Pick a date"}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent className="w-auto p-0 z-50 min-w-[320px]" align="start" sideOffset={4}>
                   <Calendar
                     mode="single"
                     selected={formData.endDate}
@@ -267,6 +297,13 @@ export function EventModal({ isOpen, onClose, selectedDate, selectedEvent, calen
                       }
                     }}
                     initialFocus
+                    className="[--cell-size:3.5rem] p-4 [&_.rdp-day]:m-1 [&_.rdp-button]:w-10 [&_.rdp-button]:h-10"
+                    classNames={{
+                      week: "flex w-full mt-3 gap-2 justify-between",
+                      weekdays: "flex gap-2 justify-between mb-2",
+                      day: "relative text-center flex-1 min-w-[2.5rem]",
+                      table: "w-full"
+                    }}
                   />
                 </PopoverContent>
               </Popover>

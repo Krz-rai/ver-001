@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface CalendarEvent {
@@ -88,7 +89,7 @@ export function CalendarGrid({ currentDate, viewMode, onDateClick, onEventClick,
 
     try {
       await updateEvent({
-        eventId: draggedEvent._id as any,
+        eventId: draggedEvent._id as Id<"events">,
         startTime: newStartTime,
         endTime: newEndTime,
       });
