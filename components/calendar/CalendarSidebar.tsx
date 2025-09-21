@@ -25,7 +25,7 @@ interface CalendarSidebarProps {
   onOpenAISchedule?: () => void;
   onTaskClick?: (task: { _id: Id<"tasks">; scheduledEventId?: Id<"events">; title: string; }) => void;
   selectedTaskId?: Id<"tasks"> | null;
-  onTaskEdit?: (task: any) => void;
+  onTaskEdit?: (task: { _id: Id<"tasks">; _creationTime: number; title: string; description?: string; priority: "low" | "medium" | "high"; priorityValue: number; duration: number; deadline?: string; startDate?: string; userId: string; status: "pending" | "scheduled" | "completed"; scheduledEventId?: Id<"events">; }) => void;
 }
 
 export function CalendarSidebar({

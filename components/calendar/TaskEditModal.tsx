@@ -107,7 +107,12 @@ export function TaskEditModal({ isOpen, onClose, task, onTaskUpdated }: TaskEdit
     setHasChanges(true);
   };
 
-  const handleInputChange = (setter: (value: string | number) => void) => (value: string | number) => {
+  const handleInputChange = (setter: (value: string) => void) => (value: string) => {
+    setter(value);
+    setHasChanges(true);
+  };
+
+  const handleNumberInputChange = (setter: (value: number) => void) => (value: number) => {
     setter(value);
     setHasChanges(true);
   };
@@ -426,7 +431,7 @@ export function TaskEditModal({ isOpen, onClose, task, onTaskUpdated }: TaskEdit
             <Input
               type="number"
               value={duration}
-              onChange={(e) => handleInputChange(setDuration)(parseInt(e.target.value) || 60)}
+              onChange={(e) => handleNumberInputChange(setDuration)(parseInt(e.target.value) || 60)}
               min="15"
               max="480"
             />

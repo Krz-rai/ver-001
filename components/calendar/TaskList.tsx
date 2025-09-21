@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar, Clock, MoreHorizontal, CheckCircle2, Circle, Eye, Edit3, Loader2 } from "lucide-react";
+import { Calendar, Clock, CheckCircle2, Circle, Eye, Edit3, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -158,7 +158,7 @@ export function TaskList({ onTaskClick, selectedTaskId, onTaskEdit }: TaskListPr
               key={filter.key}
               variant={statusFilter === filter.key ? "default" : "ghost"}
               size="sm"
-              onClick={() => setStatusFilter(filter.key as any)}
+              onClick={() => setStatusFilter(filter.key as "all" | "pending" | "scheduled" | "completed")}
               className="px-2 h-6 text-xs"
             >
               {filter.label}
@@ -215,7 +215,9 @@ export function TaskList({ onTaskClick, selectedTaskId, onTaskEdit }: TaskListPr
                         </span>
                         <div className="flex items-center gap-1 flex-shrink-0">
                           {task.scheduledEventId && (
-                            <Eye className="w-3 h-3 text-blue-500" title="Linked to calendar event" />
+                            <div title="Linked to calendar event">
+                              <Eye className="w-3 h-3 text-blue-500" />
+                            </div>
                           )}
                           <button
                             onClick={(e) => {

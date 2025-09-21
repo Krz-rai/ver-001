@@ -11,6 +11,7 @@ import CornerAIChat from "../../components/corner-ai-chat";
 import { Authenticated, Unauthenticated } from "convex/react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Doc, Id } from "../../convex/_generated/dataModel";
 import { SignInButton, UserButton } from "@clerk/nextjs";
 
 export default function CalendarPage() {
@@ -47,7 +48,7 @@ function CalendarContent() {
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
   const [highlightedEventId, setHighlightedEventId] = useState<Id<"events"> | null>(null);
   const [isTaskEditModalOpen, setIsTaskEditModalOpen] = useState(false);
-  const [taskToEdit, setTaskToEdit] = useState<any>(null);
+  const [taskToEdit, setTaskToEdit] = useState<Doc<"tasks"> | null>(null);
 
   // Initialize currentDate on client side to prevent hydration mismatch
   useEffect(() => {
@@ -110,7 +111,7 @@ function CalendarContent() {
     }
   };
 
-  const handleTaskEdit = (task: any) => {
+  const handleTaskEdit = (task: Doc<"tasks">) => {
     setTaskToEdit(task);
     setIsTaskEditModalOpen(true);
   };
@@ -323,9 +324,7 @@ function CalendarContent() {
       />
 
       {/* Corner AI Chat */}
-      <CornerAIChat 
-        defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
-      />
+      <CornerAIChat />
 
       {/* Task Edit Modal */}
       <TaskEditModal
