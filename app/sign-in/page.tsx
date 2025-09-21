@@ -1,30 +1,32 @@
-import { SignIn } from "@clerk/nextjs";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 
 export default function SignInPage() {
+  const router = useRouter();
+  const { isSignedIn } = useUser();
+
+  useEffect(() => {
+    // If user is already signed in, redirect to calendar
+    if (isSignedIn) {
+      router.push("/calendar");
+    } else {
+      // If not signed in, redirect to root page (which shows landing for unauth users)
+      router.push("/");
+    }
+  }, [isSignedIn, router]);
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Welcome Back
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Sign in to your Google Calendar Clone account
-          </p>
-        </div>
-        <SignIn 
-          appearance={{
-            elements: {
-              formButtonPrimary: "bg-blue-600 hover:bg-blue-700 text-white",
-              card: "shadow-lg",
-              headerTitle: "text-gray-900 dark:text-white",
-              headerSubtitle: "text-gray-600 dark:text-gray-400",
-              socialButtonsBlockButton: "border border-gray-300 hover:bg-gray-50",
-              formFieldInput: "border-gray-300 focus:border-blue-500 focus:ring-blue-500",
-              footerActionLink: "text-blue-600 hover:text-blue-700",
-            },
-          }}
-        />
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+          Redirecting...
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          Please wait while we redirect you.
+        </p>
       </div>
     </div>
   );
