@@ -300,9 +300,7 @@ function CalendarContent() {
       />
 
       {/* Corner AI Chat */}
-      <CornerAIChat 
-        defaultCalendarId={stableCalendars.find(cal => cal.isDefault)?._id || stableCalendars[0]?._id}
-      />
+      <CornerAIChat />
     </div>
   );
 }

@@ -18,7 +18,7 @@ const DATA = [
   {
     title: "Find patterns",
     description:
-      "Over time, you'll notice gentle insights about your schedule. Small suggestions that help create better balance.",
+      "Over time, you&apos;ll notice gentle insights about your schedule. Small suggestions that help create better balance.",
     icon: LocateFixed,
     image: {
       src: "https://res.cloudinary.com/djhffnsdl/image/upload/v1758418610/7777433_vjo7zv.jpg",
@@ -39,7 +39,7 @@ const DATA = [
   {
     title: "Grow together",
     description:
-      "The more you use it, the better it gets at understanding your rhythm. It's a calendar that adapts to you.",
+      "The more you use it, the better it gets at understanding your rhythm. It&apos;s a calendar that adapts to you.",
     icon: Cpu,
     image: {
       src: "https://res.cloudinary.com/djhffnsdl/image/upload/v1758418903/5361486_vzv3vf.jpg",
@@ -66,7 +66,7 @@ const Timeline4 = () => {
           </h2>
           <p className="max-w-[600px] tracking-normal text-muted-foreground">
             We believe good tools should work quietly in the background. 
-            Here's how our calendar grows with you, step by step.
+            Here&apos;s how our calendar grows with you, step by step.
           </p>
         </div>
       </div>

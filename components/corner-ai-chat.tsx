@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Bot, MessageSquarePlus, Send } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Id } from '@/convex/_generated/dataModel';
 import { cn } from '@/lib/utils';
 
 // AI elements UI kit
@@ -17,7 +16,7 @@ import { Response } from "@/components/ai-elements/response";
 import { Actions, Action } from "@/components/ai-elements/actions";
 
 // Simple chat implementation using ai-elements components
-export default function CornerAIChat({ defaultCalendarId }: { defaultCalendarId?: Id<"calendars"> }) {
+export default function CornerAIChat() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: Date }>>([]);
   const [input, setInput] = useState("");
@@ -25,8 +24,8 @@ export default function CornerAIChat({ defaultCalendarId }: { defaultCalendarId?
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const calendars = useQuery(api.calendars.getUserCalendars);
-  const calendarId = defaultCalendarId || calendars?.find(cal => cal.isDefault)?._id || calendars?.[0]?._id;
+  // const calendars = useQuery(api.calendars.getUserCalendars);
+  // const calendarId = defaultCalendarId || calendars?.find(cal => cal.isDefault)?._id || calendars?.[0]?._id;
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -117,7 +116,7 @@ When users ask about their schedule, free time, or availability, use this calend
         const assistantMessage = {
           id: `assistant-${Date.now()}`,
           role: 'assistant' as const,
-          content: result.text || 'I apologize, but I couldn\'t process your request.',
+          content: result.text || 'I apologize, but I couldn&apos;t process your request.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, assistantMessage]);
@@ -152,7 +151,7 @@ When users ask about their schedule, free time, or availability, use this calend
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e as any);
+      handleSubmit(e as React.FormEvent);
     }
   };
 
@@ -199,7 +198,7 @@ When users ask about their schedule, free time, or availability, use this calend
                         AI Schedule Assistant
                       </h3>
                       <p className="text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
-                        I'm here to help you with your schedule! Ask me about your upcoming events, find free time slots, or get suggestions for optimal meeting times.
+                        I&apos;m here to help you with your schedule! Ask me about your upcoming events, find free time slots, or get suggestions for optimal meeting times.
                       </p>
                       <div className="grid grid-cols-1 gap-2 max-w-md mx-auto">
                         {suggestedPrompts.map((prompt, index) => (
