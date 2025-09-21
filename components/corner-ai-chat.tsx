@@ -189,7 +189,8 @@ When users ask about their schedule, free time, or availability, use this calend
 
           <div className="flex flex-col h-[520px] bg-white dark:bg-neutral-950 overflow-hidden rounded-b-xl">
             <Conversation className="flex-1 overflow-hidden">
-              <ConversationContent ref={scrollContainerRef} className="p-4 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+              <div ref={scrollContainerRef} className="p-4 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                <ConversationContent>
                 {messages.length === 0 ? (
                   <ConversationEmptyState className="text-center">
                     <div className="space-y-4">
@@ -240,7 +241,8 @@ When users ask about their schedule, free time, or availability, use this calend
                     )}
                   </div>
                 )}
-              </ConversationContent>
+                </ConversationContent>
+              </div>
               <ConversationScrollButton />
             </Conversation>
 

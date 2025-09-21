@@ -21,8 +21,8 @@ export default function CalendarPage() {
       <Unauthenticated>
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4">Please sign in to access the calendar</h1>
-            <p className="text-gray-600 mb-6">You need to be authenticated to view your calendar.</p>
+            <h1 className="text-2xl font-bold mb-4">Welcome to A Smart Calendar</h1>
+            <p className="text-gray-600 mb-6">Sign in to access your AI-powered calendar and start organizing your life.</p>
             <SignInButton mode="modal">
               <Button className="bg-blue-600 hover:bg-blue-700">
                 Sign In

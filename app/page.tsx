@@ -4,15 +4,24 @@ import {
   Authenticated,
   Unauthenticated,
 } from "convex/react";
-import Link from "next/link";
-import { SignUpButton } from "@clerk/nextjs";
-import { SignInButton } from "@clerk/nextjs";
-import { UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+// Import the landing page components
+import { Hero157 } from "@/components/hero157";
+import { Feature286 } from "@/components/feature286";
+import { Feature234 } from "@/components/feature234";
+import { Integration8 } from "@/components/integration8";
+import { Logos10 } from "@/components/logos10";
+import { Timeline4 } from "@/components/timeline4";
+import { Footer14 } from "@/components/footer14";
+import { Feature242 } from "@/components/feature242";
+import { Feature18 } from "@/components/feature18";
+import { Navbar4 } from "@/components/navbar4";
+
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setIsClient(true);
@@ -20,40 +29,27 @@ export default function Home() {
 
   if (!isClient) {
     return (
-      <>
-        <header className="sticky top-0 z-10 bg-background p-4 border-b-2 border-slate-200 dark:border-slate-800 flex flex-row justify-between items-center">
-          Google Calendar Clone
-          <div className="w-8 h-8" /> {/* Placeholder for UserButton */}
-        </header>
-        <main className="p-8 flex flex-col gap-8">
-          <h1 className="text-4xl font-bold text-center">
-            Google Calendar Clone
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+            Welcome to Plan B
           </h1>
-          <div className="flex justify-center">
-            <div className="animate-pulse">Loading...</div>
-          </div>
-        </main>
-      </>
+          <p className="text-gray-600 dark:text-gray-400">
+            Loading...
+          </p>
+        </div>
+      </div>
     );
   }
 
   return (
     <>
-      <header className="sticky top-0 z-10 bg-background p-4 border-b-2 border-slate-200 dark:border-slate-800 flex flex-row justify-between items-center">
-        Google Calendar Clone
-        <UserButton />
-      </header>
-      <main className="p-8 flex flex-col gap-8">
-        <h1 className="text-4xl font-bold text-center">
-          Google Calendar Clone
-        </h1>
-        <Authenticated>
-          <AuthenticatedContent />
-        </Authenticated>
-        <Unauthenticated>
-          <SignInForm />
-        </Unauthenticated>
-      </main>
+      <Authenticated>
+        <AuthenticatedContent />
+      </Authenticated>
+      <Unauthenticated>
+        <LandingPageContent />
+      </Unauthenticated>
     </>
   );
 }
@@ -62,46 +58,34 @@ function AuthenticatedContent() {
   const router = useRouter();
 
   useEffect(() => {
+    // Redirect authenticated users to calendar
     router.push("/calendar");
   }, [router]);
 
   return (
-    <div className="flex flex-col gap-4 max-w-lg mx-auto text-center">
-      <p>Redirecting to calendar...</p>
-      <Link 
-        href="/calendar" 
-        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-      >
-        Go to Calendar
-      </Link>
+    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+          Welcome back!
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          Redirecting to your calendar...
+        </p>
+      </div>
     </div>
   );
 }
 
-function SignInForm() {
+function LandingPageContent() {
   return (
-    <div className="flex flex-col gap-8 w-96 mx-auto">
-      <p className="text-center text-gray-600 dark:text-gray-400">
-        Log in to access your calendar
-      </p>
-      <div className="flex flex-col gap-4">
-        <SignInButton 
-          fallbackRedirectUrl="/calendar"
-          mode="modal"
-        >
-          <span className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors cursor-pointer inline-block text-center">
-            Sign in
-          </span>
-        </SignInButton>
-        <SignUpButton 
-          fallbackRedirectUrl="/calendar"
-          mode="modal"
-        >
-          <span className="w-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-4 py-2 rounded-md transition-colors cursor-pointer inline-block text-center">
-            Sign up
-          </span>
-        </SignUpButton>
-      </div>
+    <div>
+      <Navbar4 />
+      <Hero157 />
+      <Feature18 />
+      <Feature242 />
+      <Logos10 />
+      <Timeline4 />
+      <Footer14 />
     </div>
   );
 }
