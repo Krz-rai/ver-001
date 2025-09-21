@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { Fragment, useState, useEffect } from "react";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -1038,14 +1039,14 @@ const Navbar4 = () => {
     "solutions" | "products" | "global" | "partners" | "resources" | null
   >(null);
   const { isDarkMode, toggleDarkMode } = useDarkMode();
-  const { isSignedIn, user } = useUser();
+  const { isSignedIn } = useUser();
 
   return (
     <section className="bg-background dark border-b border-border inset-x-0 top-0 z-20">
       <div className="container">
         <NavigationMenu className="min-w-full [&>div:last-child]:left-auto">
           <div className="flex w-full justify-between gap-2 py-4">
-            <a
+            <Link
               href="/"
               className="flex items-center gap-2"
             >
@@ -1053,7 +1054,7 @@ const Navbar4 = () => {
               <span className="text-lg font-semibold tracking-tighter text-foreground">
                 Plan B
               </span>
-            </a>
+            </Link>
             <div className="flex items-center gap-2 xl:gap-8">
               <NavigationMenuList className="hidden gap-0 lg:flex">
                 {navigationMenuItems.map((item) => (

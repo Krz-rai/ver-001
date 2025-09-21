@@ -9,9 +9,6 @@ import { useRouter } from "next/navigation";
 
 // Import the landing page components
 import { Hero157 } from "@/components/hero157";
-import { Feature286 } from "@/components/feature286";
-import { Feature234 } from "@/components/feature234";
-import { Integration8 } from "@/components/integration8";
 import { Logos10 } from "@/components/logos10";
 import { Timeline4 } from "@/components/timeline4";
 import { Footer14 } from "@/components/footer14";
@@ -21,7 +18,6 @@ import { Navbar4 } from "@/components/navbar4";
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     setIsClient(true);

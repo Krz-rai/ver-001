@@ -1,4 +1,6 @@
 import { FaFacebook, FaLinkedin, FaXTwitter } from "react-icons/fa6";
+import Link from "next/link";
+
 
 const navigation = [
   {
@@ -43,11 +45,11 @@ export const Footer14 = () => {
         {/* Logo and newsletter section */}
         <div className="mb-10 flex flex-col items-start justify-between gap-10 border-b border-border pb-10 sm:mb-16 sm:pb-12 md:flex-row">
           <div className="w-full max-w-full sm:max-w-sm">
-            <a href="/" className="inline-block">
+            <Link href="/" className="inline-block">
               <div className="mb-6 text-2xl font-semibold text-foreground">
                 A Smart Calendar
               </div>
-            </a>
+            </Link>
             <p className="mb-8 text-base text-muted-foreground">
               Helping people find their natural rhythm with thoughtful calendar tools 
               that respect your time and reduce stress.
@@ -112,12 +114,12 @@ export const Footer14 = () => {
           {/* Copyright - Below on mobile, left on desktop */}
           <p className="order-2 text-center text-sm text-muted-foreground sm:text-left md:order-1">
             © {new Date().getFullYear()} Plan B. All rights reserved.{" "}
-            <a
+            <Link
               href="/"
               className="text-foreground underline underline-offset-4 transition-colors hover:text-primary"
             >
               Smart Calendar
-            </a>
+            </Link>
           </p>
         </div>
       </div>
